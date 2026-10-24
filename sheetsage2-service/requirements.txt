@@ -1,0 +1,13 @@
+# SheetSage2 semantic service (port 8001)
+#
+# Runtime: Python 3.11 (isolated service environment)
+# Third-party packages: NONE.  The service is standard-library only, so its
+# idle footprint stays far below the 1.5 GB target and it can start before
+# any ML runtime exists.
+#
+# Flow-C audio inference is intentionally *not* a dependency of this service.
+# It runs in the separate YuE2 / MLX environment (Python 3.12), frozen in
+# requirements-yue2-mlx.txt, as a one-shot child process.  The encoder is
+# therefore never resident while the service is idle (lazy-load rule).
+#
+# Deliberately absent: torch, torchaudio, CUDA wheels, ComfyUI, and any cloud SDK.

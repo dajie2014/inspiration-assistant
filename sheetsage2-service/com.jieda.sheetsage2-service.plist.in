@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jieda.sheetsage2-service</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>__BASE__/service/service.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__BASE__/service</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SS2_BASE</key><string>__BASE__</string>
+    <key>SS2_CACHE</key><string>__BASE__/abc-cache</string>
+    <key>SS2_MODELS</key><string>__BASE__/models</string>
+    <key>SS2_LOGS</key><string>__BASE__/logs</string>
+    <key>SS2_PORT</key><string>8001</string>
+    <key>SS2_YUE2_BIN</key><string>__YUE2_BIN__</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__BASE__/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__BASE__/logs/launchd.err.log</string>
+</dict>
+</plist>

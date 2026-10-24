@@ -1,0 +1,73 @@
+# ── 产物与缓存（这些都能再生成，不进仓库）──
+output/
+logs/
+tmp/
+build/
+_cache/
+_dl/
+_keep/
+_recon/
+_shots/
+_home/
+*.app/
+
+# ── 第三方大件：自己下载，不进仓库 ──
+# ACE-Step 1.5 的运行环境（约 1.6 GB，含权重）
+backend/ACE-Step-1.5/
+backend/*/
+# 模型权重（GGUF / safetensors / PyTorch）
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# 用户音频与谱子（版权在用户手里，绝不跟着代码发）
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.mid
+*.xml
+*.musicxml
+*.mxl
+*.abc
+# ⚠️ 上面这几条是给"作品"用的；文档里要是有示例谱，
+#    放在 docs/examples/ 下并在仓库里用 .gitattributes 显式放行。
+!docs/examples/*.musicxml
+
+# ── 构建 ──
+.build/
+.swift-cache/
+*.o
+*.dSYM/
+
+# ── Python ──
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ── 备份与临时 ──
+*.bak-*
+*.orig
+*.log
+.DS_Store
+._*
+
+# ── 实验数据 ──
+实验-*/
+
+# ── 不发布的内容（2026-10-24 定的）──
+# 用户的提示词、作品名、创作素材
+prompts/
+# 内部开发记录（含用户作品细节、实验过程、私人习惯）
+ROADMAP.md
+# 手册与截图：**里面有用户作品的谱面与歌词**，不能跟着开源走
+docs/
+*.docx
+*.pdf
+*.png
+*.jpg
+*.jpeg
