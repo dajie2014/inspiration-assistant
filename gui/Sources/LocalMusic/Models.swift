@@ -43,6 +43,14 @@ struct GenerationRequest: Codable, Equatable {
     ///（2026-10-12 用户提的：导进来接着打磨）。
     /// ACE-Step 那条路不认这个字段，传进去它也不看。
     var abcPath: String = ""
+    /// 挂一份社区 LoRA（`.safetensors`）。空串 = 不挂。
+    ///
+    /// 它改的是**唱法 / 音色**（上游 README 的原话是 Custom Style/Artist LoRA），
+    /// **不是咬字** —— 挂了也不会让"字唱得准"变好，那是模型本身的事。
+    /// mlx-Yue 从 2026-10-13 那版起支持。
+    var loraPath: String = ""
+    /// LoRA 强度：1.0 = 原样，越小越接近没有挂的样子。
+    var loraScale: Double = 1.0
     /// 这一趟**只要谱子、不唱** —— 界面上的「先出谱子」。
     ///
     /// 只对 YuE2 有意义：让它只跑"写谱"那一步（约 40 秒），产物是一份
@@ -61,6 +69,8 @@ struct GenerationRequest: Codable, Equatable {
         case coverStrength = "cover_strength"
         case abcPath = "abc_path"
         case planOnly = "plan_only"
+        case loraPath = "lora_path"
+        case loraScale = "lora_scale"
     }
 }
 
@@ -92,6 +102,8 @@ extension GenerationRequest {
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         abcPath = try c.decodeIfPresent(String.self, forKey: .abcPath) ?? ""
         planOnly = try c.decodeIfPresent(Bool.self, forKey: .planOnly) ?? false
+        loraPath = try c.decodeIfPresent(String.self, forKey: .loraPath) ?? ""
+        loraScale = try c.decodeIfPresent(Double.self, forKey: .loraScale) ?? 1.0
     }
 }
 

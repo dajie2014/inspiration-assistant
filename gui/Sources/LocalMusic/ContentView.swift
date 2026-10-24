@@ -536,6 +536,25 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// 「挂 LoRA」：选一份社区调好的 `.safetensors` 权重。
+    ///
+    /// ★ 它改什么、不改什么，这里必须说准（2026-10-24）：
+    ///   改的是**唱法 / 音色**（上游 README 原话 Custom Style/Artist LoRA），
+    ///   **不改咬字** —— 挂着它也不会让"字唱得准"变好，那是模型本身的事。
+    ///   所以界面上没有把它写成"改善唱词"之类的字样。
+    func pickLoRA() {
+        let panel = NSOpenPanel()
+        panel.title = "选一份 LoRA"
+        panel.message = "社区调好的 .safetensors。它改唱法和音色，不改咬字。"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.data]
+        guard panel.runModal() == .OK, let file = panel.url else { return }
+        form.loraPath = file.path
+        form.loraScale = 1.0
+        exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+    }
+
     /// 面板里「保存并接上」：改过的 ABC 存进 `abc-cache/edited/`，
     /// 并让下一次「生成」照它唱。
     func saveEditedScore() {
@@ -1704,6 +1723,21 @@ struct ContentView: View {
             // 和「生成」分开放 —— 一个把谱面原样发成声音，一个让模型照谱唱，两件事。
             entryButton("谱子出声", icon: "speaker.wave.2", busy: vm.playBusy) {
                 vm.playScoreFile()
+            }
+            // 「挂 LoRA」（2026-10-24）：mlx-Yue 升级后多出来的能力。
+            // 它改的是**唱法 / 音色**，不是咬字 —— 挂着的时候按钮上直接写文件名，
+            // 免得人忘了自己挂着什么。
+            entryButton(vm.form.loraPath.isEmpty
+                        ? "挂 LoRA"
+                        : "LoRA：\(URL(fileURLWithPath: vm.form.loraPath).lastPathComponent)",
+                        icon: "wand.and.stars", busy: false) {
+                vm.pickLoRA()
+            }
+            if !vm.form.loraPath.isEmpty {
+                entryButton("不挂", icon: "xmark.circle", busy: false) {
+                    vm.form.loraPath = ""
+                    vm.form.loraScale = 1.0
+                }
             }
             if !vm.ss2RepairedABC.isEmpty {
                 entryButton("看乐谱", icon: "music.note.list", busy: false) {

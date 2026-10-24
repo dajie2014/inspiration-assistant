@@ -491,6 +491,34 @@ cd "$YUE2_DIR" || die "进不去 YuE2 目录：${YUE2_DIR}" 7
 #     execution path」，进程随即退出码 1。
 unset PYTORCH_ENABLE_MPS_FALLBACK PYTORCH_MPS_FAST_MATH
 
+# ── LoRA（2026-10-24 加）──
+#
+# mlx-Yue 从 2026-10-13 那版起支持挂社区的 safetensors LoRA：
+#   --lora <文件> --lora-scale <倍数>
+# 它改的是**唱法／音色**（上游 README 写的是 Custom Style/Artist LoRA），
+# 不是"把字唱准"—— 这一点写在这儿，免得将来有人以为挂了 LoRA 就能治咬字。
+#
+# 没给 `lora_path` 就一个字都不传（空数组）。⚠️ macOS 自带的是 bash 3.2，
+# `"${arr[@]}"` 在空数组 + `set -u` 下会报 unbound，所以用
+# `${arr[@]+"${arr[@]}"}` 这种写法。
+LORA_ARGS=()
+LORA_PATH="$(/usr/bin/python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("lora_path") or "")' "$PARAMS" 2>/dev/null || true)"
+if [ -n "$LORA_PATH" ]; then
+  # 相对路径按 params.json 所在目录解（跟本脚本别的路径一个规矩）
+  case "$LORA_PATH" in
+    /*) ;;
+    *)  LORA_PATH="$(cd "$(dirname "$PARAMS")" && pwd)/$LORA_PATH" ;;
+  esac
+  if [ ! -f "$LORA_PATH" ]; then
+    MSG="找不到这个 LoRA 文件：${LORA_PATH}"
+    write_progress "$LAST_PERCENT" "failed" "$MSG"
+    echo "[yue2_adapter] $MSG" >&2
+    exit 2
+  fi
+  LORA_SCALE="$(/usr/bin/python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));v=d.get("lora_scale");print(v if v is not None else 1.0)' "$PARAMS" 2>/dev/null || echo 1.0)"
+  LORA_ARGS=(--lora "$LORA_PATH" --lora-scale "$LORA_SCALE")
+fi
+
 # `$ACTION` 是 plan（只要谱子）或 generate（出整首歌）—— 两条子命令
 # 共用同一份请求 JSON 和同一组参数，差别只在它跑到哪一步停。
 "$YUE2_BIN" "$ACTION" "$REQUEST" \
@@ -499,7 +527,8 @@ unset PYTORCH_ENABLE_MPS_FALLBACK PYTORCH_MPS_FAST_MATH
   --precision 8bit \
   --offline \
   --require-ac \
-  --output "$WORK_DIR" 2>&1 | tee "$LOG" | while IFS= read -r line; do
+  --output "$WORK_DIR" \
+  ${LORA_ARGS[@]+"${LORA_ARGS[@]}"} 2>&1 | tee "$LOG" | while IFS= read -r line; do
     parse_line "$line"
   done
 
