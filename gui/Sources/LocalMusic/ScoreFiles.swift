@@ -181,6 +181,35 @@ enum ScoreFiles {
         return produced
     }
 
+    /// 旧项目的 MusicXML → 工作室要的 ABC，**先探八度**（2026-10-25 用户要的：
+    /// 「不要直接放上去，做个探针检查一下；还是高八度就改成新机制」）。
+    ///
+    /// 旧机制导出的 XML 只降了人声、伴奏还是高八度；直接 `to-abc` 会被多升一个八度。
+    /// 探针在 `yue2-local/tools/studio_abc.py` 里（按两条声部的音高中位数判），
+    /// 判成旧的就把伴奏降回来再转。**不动用户那份 XML**（脚本在临时副本上做）。
+    static func studioABCFromXML(_ xml: URL) -> String? {
+        let script = converter.deletingLastPathComponent()
+            .appendingPathComponent("tools/studio_abc.py")
+        guard FileManager.default.fileExists(atPath: script.path) else { return nil }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [script.path, xml.path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (object["ok"] as? Bool) == true,
+              let abc = object["abc"] as? String, !abc.isEmpty
+        else { return nil }
+        return abc
+    }
+
     /// 把转出来的文件**搬到**指定位置。
     ///
     /// 为什么需要这一步：`abcxml` 只会把产物写在**源文件旁边**（它的规矩，
@@ -499,18 +528,74 @@ enum ScoreFiles {
 @MainActor
 extension AppViewModel {
 
+    /// 「进入谱面工作室」（菜单 ⇧⌘Y，2026-10-25 用户要的）：
+    /// **有谱就把那份谱带过去**，没谱就只打开页面让他自己导入。
+    ///
+    /// 为什么要跟「送到谱面工作室」分开：那个按钮是"只送谱"，没有谱时只能报错；
+    /// 而这个入口是"进那间屋子"，空着手也能进。
+    func enterScoreStudio() {
+        if studioABC() != nil {
+            sendToScoreStudio()
+            return
+        }
+        studioMessage = "工作室打开了；这边没有谱，可以在里面导入 MusicXML。"
+        ScoreStudioClient.shared.open { [weak self] result in
+            guard let self else { return }
+            if case .failure(let error) = result {
+                self.studioMessage = "打不开工作室：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// 这一首此刻能交给工作室的谱：面板里改过的 ABC → 选中那首目录里的谱。
+    /// 两处取法只能有一份 —— `sendToScoreStudio` 与 `enterScoreStudio` 都从这儿拿。
+    ///
+    /// ★ 2026-10-25 用户要求：「选中一个已经生成的旧项目，点工作室，就把旧项目的
+    ///   谱子一起揪出来」。以前只看 `item.scoreBase`（**只认 YuE2 引擎**），
+    ///   旧项目/别的引擎就一律当"没谱"。现在按目录里真实存在的文件找，
+    ///   不管哪台引擎；只有 `.xml` 的就地转一份 `.abc`。
+    func studioABC() -> String? {
+        if !ss2RepairedABC.isEmpty { return ss2RepairedABC }
+        guard let item = selectedItem else { return nil }
+
+        // 1) 输出目录里同名的 `.abc`
+        if let output = item.outputPath {
+            let base = URL(fileURLWithPath: output).deletingPathExtension()
+            let abc = base.appendingPathExtension("abc")
+            if let text = try? String(contentsOf: abc, encoding: .utf8), !text.isEmpty {
+                return text
+            }
+            // 2) 只有 `.xml`：**先探八度再转**（旧项目的伴奏还是高八度，
+            //    直接转会被多升一个八度）。探针脚本缺失时才退回老路。
+            let xml = base.appendingPathExtension("xml")
+            if FileManager.default.fileExists(atPath: xml.path) {
+                if let text = ScoreFiles.studioABCFromXML(xml), !text.isEmpty {
+                    return text
+                }
+                if let made = try? ScoreFiles.convert(xml, to: .abc),
+                   let text = try? String(contentsOf: made, encoding: .utf8), !text.isEmpty {
+                    return text
+                }
+            }
+        }
+
+        // 3) 「先出谱子」那种：手上只有谱、没有音频
+        if let score = item.scorePath {
+            let url = URL(fileURLWithPath: score)
+            if url.pathExtension.lowercased() == "abc",
+               let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
     /// 「送到谱面工作室」：把当前这份谱交给本机 8808 的离线网页工作室，
-    /// 在那里点音符改，改完点「重新出歌」——用来验证「人修过的谱会不会唱得更准」。
+    /// 在那里点音符改，改完点「重新唱」——用来验证「人修过的谱会不会唱得更准」。
     ///
     /// 取谱顺序：面板里改过的 ABC → 选中那首输出目录里的 .abc。
     func sendToScoreStudio() {
-        var abc: String?
-        if !ss2RepairedABC.isEmpty {
-            abc = ss2RepairedABC
-        } else if let item = selectedItem, let base = item.scoreBase {
-            abc = try? String(contentsOf: base.appendingPathExtension("abc"), encoding: .utf8)
-        }
-        guard let text = abc, !text.isEmpty else {
+        guard let text = studioABC(), !text.isEmpty else {
             studioMessage = "先选一首有谱子的，或导入一份 MusicXML"
             return
         }
@@ -526,7 +611,7 @@ extension AppViewModel {
             guard let self else { return }
             switch result {
             case .success:
-                self.studioMessage = "已送到谱面工作室；浏览器里改完点「重新出歌」"
+                self.studioMessage = "已送到谱面工作室；改完点「重新唱」，会回到这里开一轮新的生成"
             case .failure(let error):
                 self.studioMessage = "送不过去：\(error.localizedDescription)"
             }

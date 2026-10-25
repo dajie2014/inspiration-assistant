@@ -103,6 +103,48 @@ enum BridgeInbox {
         return trimmed
     }
 
+    // MARK: - 谱面工作室的「重新唱一遍」
+
+    /// 谱面工作室送来的重唱请求（2026-10-25）。
+    ///
+    /// 用户原话：「修改完乐谱之后，重新唱一遍。就自动触发一轮新的生成，
+    /// 在主程序当中写一个 script。」
+    /// 送的是**改完的整份 ABC**（不是路径 —— 工作室那边随时可能换文件），
+    /// 外加当时那套词 / 风格 / 种子 / 步数。
+    struct Regenerate: Codable {
+        var from: String?
+        var abc: String?
+        var style: String?
+        var lyrics: String?
+        var seed: Int?
+        var steps: Int?
+        var title: String?
+        var at: Double?
+    }
+
+    nonisolated static var regenerateFile: URL {
+        folder.appendingPathComponent("regenerate.json")
+    }
+
+    /// 有没有**新的**重唱请求；有就取走。
+    ///
+    /// ⚠️ 判重只看时刻、不看内容：同一份谱用户可能故意再唱一遍（不满意上一版），
+    /// 所以他再点一次就该再跑一次。重复读同一个文件不会重复开跑。
+    static func takeRegenerate() -> Regenerate? {
+        guard let data = try? Data(contentsOf: regenerateFile),
+              let request = try? JSONDecoder().decode(Regenerate.self, from: data),
+              request.from == "yue2-studio",
+              let abc = request.abc,
+              !abc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+
+        let at = request.at ?? 0
+        let seenAt = UserDefaults.standard.double(forKey: "bridge.lastRegenerateAt")
+        guard at > seenAt else { return nil }
+        UserDefaults.standard.set(at, forKey: "bridge.lastRegenerateAt")
+        return request
+    }
+
     /// 把**当前表单**写回信箱，等 CA 来取。
     ///
     /// `nonisolated`：它只落一个文件、不碰 UI，也不读 `UserDefaults` ——

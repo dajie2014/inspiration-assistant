@@ -207,6 +207,64 @@ final class AppViewModel: ObservableObject {
     func takeBridgeStyle() {
         if let text = BridgeInbox.takeNew(.style) { form.prompt = text }
         if let text = BridgeInbox.takeNew(.lyrics) { form.lyrics = text }
+        // 谱面工作室改完谱、点了「重新出歌」——在这儿开一轮新的生成。
+        if let request = BridgeInbox.takeRegenerate() {
+            applyStudioRegenerate(request)
+        }
+    }
+
+    /// 收到工作室的重唱请求：把谱落到一个文件、填好表单，然后按「生成」。
+    ///
+    /// 为什么落文件：`form.abcPath` 是**路径**，脚本读的是磁盘上那份谱。
+    /// 落在 Application Support（不是 output/）—— 这是"正在用的输入"，
+    /// 不该在用户的作品列表里冒出一条。
+    ///
+    /// `CS_STUDIO_DRY=1` 只填表单、不真跑（验证信箱那条链路用，省一次四分钟）。
+    func applyStudioRegenerate(_ request: BridgeInbox.Regenerate) {
+        guard let abc = request.abc, !abc.isEmpty else { return }
+        guard !isRunning else {
+            studioMessage = "工作室送来一份改好的谱，但这边正在生成 —— 等这一轮完了再点一次「重新出歌」。"
+            return
+        }
+
+        let folder = BridgeInbox.folder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let stamp = Int(Date().timeIntervalSince1970)
+        // ★ 名字里带 `-model`：工作室交回来的谱**已经是模型高度**（页面显示低八度，
+        //   交接时服务端升回去了）。`prepare_score.py` 看到这个标记就不再升，
+        //   否则人声会被抬两个八度（2026-10-25 加）。
+        let file = folder.appendingPathComponent("studio-\(stamp)-model.abc")
+        do {
+            try abc.write(to: file, atomically: true, encoding: .utf8)
+        } catch {
+            studioMessage = "工作室的谱收下了，但存不下来：\(error.localizedDescription)"
+            return
+        }
+
+        form.abcPath = file.path
+        if let style = request.style, !style.isEmpty { form.prompt = style }
+        if let lyrics = request.lyrics, !lyrics.isEmpty { form.lyrics = lyrics }
+        if let seed = request.seed { form.seed = seed }
+        if let title = request.title, !title.isEmpty { form.title = FileName.safe(title) }
+        engine = .yue2
+        yue2Tier = (request.steps ?? 8) <= 8 ? .fast : .standard
+        // 这一轮是"照谱唱"，不该沿用界面上选中的那一条（那一条的产物是旧的）。
+        selectedID = nil
+
+        // 自检有两种开关：环境变量（从命令行启动时）和偏好（双击启动时也生效 ——
+        // GUI 从 launchd 起来，拿不到我 shell 里的环境变量）。
+        let dry = ProcessInfo.processInfo.environment["CS_STUDIO_DRY"] == "1"
+            || UserDefaults.standard.bool(forKey: "CSStudioDry")
+        if dry {
+            print("[CS] 工作室重唱请求（dry）—— 谱=\(file.lastPathComponent)"
+                + " 风格=\(form.prompt.prefix(24)) 词=\(form.lyrics.prefix(24))"
+                + " 档=\(yue2Tier)")
+            studioMessage = "（自检）工作室送来一份谱：\(file.lastPathComponent)"
+            return
+        }
+
+        studioMessage = "工作室送来一份改好的谱 —— 开始重唱。"
+        generate()
     }
 
     /// 把当前表单写回信箱，等 Composer Assistant 来取。
@@ -1187,6 +1245,26 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 WelcomeWindow.shared.show()
             }
+        }
+
+        // 工作室取谱自检：`CS_STUDIO_ABC_PROBE=<标题子串>` —— 选中那一首，
+        // 打印它交给工作室的谱有多少字节（**不真打开浏览器**，省得弹窗）。
+        if let probe = env["CS_STUDIO_ABC_PROBE"], !probe.isEmpty {
+            var line = ""
+            if let pick = vm.items.first(where: { $0.title.contains(probe) }) {
+                vm.selectedID = pick.id
+                let abc = vm.studioABC() ?? ""
+                line = "[CS] 工作室取谱 —— 「\(pick.title)」 \(abc.count) 字节"
+                    + "（引擎 \(pick.request.engine)）\n"
+            } else {
+                line = "[CS] 工作室取谱 —— 列表里没有含「\(probe)」的条目\n"
+            }
+            // 用 stderr 写：`print` 在重定向时有缓冲，进程被 kill 就丢了。
+            FileHandle.standardError.write(Data(line.utf8))
+        }
+        if env["CS_STUDIO_DIR_PROBE"] == "1" {
+            let line = "[CS] 工作室路径 —— " + ScoreStudioClient.shared.probePaths() + "\n"
+            FileHandle.standardError.write(Data(line.utf8))
         }
 
         if env["CS_OPEN_JIANPU"] == "1" {

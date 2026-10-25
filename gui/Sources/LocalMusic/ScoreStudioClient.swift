@@ -16,15 +16,29 @@ final class ScoreStudioClient {
 
     /// 谱面工作室是**可选组件**（另一个项目的本地网页服务）。
     ///
-    /// 位置不写死：`CS_STUDIO_DIR` 指到哪就用哪，没指就按 `~/Music/yue2-studio` 找。
-    /// 找不到时按钮会报一句人话，不影响主流程（这条链一直是旁路）。
+    /// 位置不写死：`CS_STUDIO_DIR` 指到哪就用哪；否则按顺序找
+    /// **工作区里的 `yue2-studio`**（现在的实际位置）→ `~/Music/yue2-studio`（旧位置）。
+    ///
+    /// ⚠️ 2026-10-25 踩到：以前只认 `~/Music/yue2-studio`，而项目其实在
+    /// `default-workspace/yue2-studio` ⇒ 点「进入谱面工作室」时服务器起在
+    /// 一个不存在的目录里，页面打不开。现在按 `server.mjs` 是否存在来认。
     private var studioDir: URL {
         let env = ProcessInfo.processInfo.environment["CS_STUDIO_DIR"] ?? ""
         if !env.isEmpty {
             return URL(fileURLWithPath: NSString(string: env).expandingTildeInPath)
         }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Music/yue2-studio")
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        candidates.append(BackendClient.locateRoot()
+            .deletingLastPathComponent()
+            .appendingPathComponent("yue2-studio"))
+        candidates.append(fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Music/yue2-studio"))
+        for url in candidates
+        where fm.fileExists(atPath: url.appendingPathComponent("server.mjs").path) {
+            return url
+        }
+        return candidates[0]
     }
 
     /// node 的位置同样可配：`CS_NODE` 优先，否则试常见的两个安装位置。
@@ -41,6 +55,14 @@ final class ScoreStudioClient {
         return home.appendingPathComponent(".dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node")
     }
 
+    /// 自检用：把三个路径原样报出来（`CS_STUDIO_DIR_PROBE=1`）。
+    /// 不打开浏览器、不碰服务 —— 只回答"我打算在哪儿起它"。
+    func probePaths() -> String {
+        let dir = studioDir
+        return "dir=\(dir.path) node=\(nodePath.path) "
+            + "server=\(dir.appendingPathComponent("server.mjs").path)"
+    }
+
     /// 把一份 ABC 谱送过去并打开浏览器。
     /// - completion: 成功时给的是打开的那页 URL；失败给的是人话错误。
     func send(abc: String, style: String, lyrics: String, seed: Int, steps: Int,
@@ -54,6 +76,36 @@ final class ScoreStudioClient {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
                 self.post(abc: abc, style: style, lyrics: lyrics, seed: seed, steps: steps,
                           title: title, completion: completion)
+            }
+        }
+    }
+
+    /// 只把工作室**打开**（手上没谱的时候用）。
+    ///
+    /// 2026-10-25 用户要的：「在有乐谱的情况下，点进入 studio 就带出那份乐谱」——
+    /// 反过来，**没有谱**时也不该点不动：打开一个空页面，让他自己导入 XML。
+    /// 服务器没跑就顺手拉起来；起不来如实报（别假装打开了）。
+    func open(completion: @escaping (Result<URL, Error>) -> Void) {
+        guard let page = URL(string: "http://127.0.0.1:\(port)/") else {
+            completion(.failure(NSError(domain: "studio", code: 0)))
+            return
+        }
+        if isPortOpen() {
+            NSWorkspace.shared.open(page)
+            completion(.success(page))
+            return
+        }
+        launchServer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+            guard let self else { return }
+            if self.isPortOpen() {
+                NSWorkspace.shared.open(page)
+                completion(.success(page))
+            } else {
+                completion(.failure(NSError(
+                    domain: "studio", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey:
+                                "工作室没起来（日志在 /tmp/yue2-studio.log）"])))
             }
         }
     }
