@@ -1266,6 +1266,11 @@ struct ContentView: View {
             let line = "[CS] 工作室路径 —— " + ScoreStudioClient.shared.probePaths() + "\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
+        // 「最近的作品」看哪个文件夹（2026-10-25）：真写一次，把写进去的内容报出来。
+        if env["CS_STUDIO_ROOT_PROBE"] == "1" {
+            let line = "[CS] 工作室输出根 —— " + ScoreStudioClient.shared.probeWriteRoot() + "\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
 
         if env["CS_OPEN_JIANPU"] == "1" {
             vm.showJianpu = true

@@ -67,6 +67,7 @@ final class ScoreStudioClient {
     /// - completion: 成功时给的是打开的那页 URL；失败给的是人话错误。
     func send(abc: String, style: String, lyrics: String, seed: Int, steps: Int,
               title: String, completion: @escaping (Result<URL, Error>) -> Void) {
+        writeOutputRoot()
         if isPortOpen() {
             post(abc: abc, style: style, lyrics: lyrics, seed: seed, steps: steps,
                  title: title, completion: completion)
@@ -86,6 +87,7 @@ final class ScoreStudioClient {
     /// 反过来，**没有谱**时也不该点不动：打开一个空页面，让他自己导入 XML。
     /// 服务器没跑就顺手拉起来；起不来如实报（别假装打开了）。
     func open(completion: @escaping (Result<URL, Error>) -> Void) {
+        writeOutputRoot()
         guard let page = URL(string: "http://127.0.0.1:\(port)/") else {
             completion(.failure(NSError(domain: "studio", code: 0)))
             return
@@ -111,6 +113,27 @@ final class ScoreStudioClient {
     }
 
     // MARK: - 私有
+
+    /// 告诉工作室：「最近的作品」该看哪个文件夹（2026-10-25）。
+    ///
+    /// 用户把输出文件夹改到别处时，工作室不该还去翻项目里的 `output/`。
+    /// 往工作室目录写一个纯文本小文件（`.output-root`），服务器优先读它。
+    ///
+    /// 写不成就拉倒 —— 工作室会退回默认的 `output/`，**不能因为这一步把门堵上**。
+    private func writeOutputRoot() {
+        let target = studioDir.appendingPathComponent(".output-root")
+        let root = OutputLocation.url(projectRoot: BackendClient.locateRoot())
+        try? root.path.write(to: target, atomically: true, encoding: .utf8)
+    }
+
+    /// 自检用（`CS_STUDIO_ROOT_PROBE=1`）：**真写一次** `.output-root`，
+    /// 再把写进去的内容读回来 —— 「我写了一份」和「它真落地了」是两件事。
+    func probeWriteRoot() -> String {
+        writeOutputRoot()
+        let target = studioDir.appendingPathComponent(".output-root")
+        let text = (try? String(contentsOf: target, encoding: .utf8)) ?? "(没写进去)"
+        return "target=\(target.path) content=\(text.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
 
     private func post(abc: String, style: String, lyrics: String, seed: Int, steps: Int,
                       title: String, completion: @escaping (Result<URL, Error>) -> Void) {
