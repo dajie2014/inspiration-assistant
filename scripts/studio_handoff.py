@@ -59,7 +59,7 @@ def main():
         return 1
 
     payload = {
-        "from": "yue2-studio",
+        "from": "mi-studio",
         "abc": abc,
         "style": args.style,
         "lyrics": args.lyrics,

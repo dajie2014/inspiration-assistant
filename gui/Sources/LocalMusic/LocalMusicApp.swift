@@ -67,10 +67,10 @@ struct LocalMusicApp: App {
             // ── 工作室菜单（2026-10-25）──
             //
             // 用户要的：「在有乐谱的情况下，点进入 studio 就带出那份乐谱」。
-            // 有谱 → 走「送到谱面工作室」那条（谱、词、风格一起过去）；
+            // 有谱 → 走「送到 MI Studio」那条（谱、词、风格一起过去）；
             // 没谱 → 只把页面打开，让他自己在里面导入 XML。
             CommandMenu("工作室") {
-                Button("进入谱面工作室…") { vm.enterScoreStudio() }
+                Button("进入 MI Studio…") { vm.enterScoreStudio() }
                     .keyboardShortcut("y", modifiers: [.command, .shift])
             }
         }

@@ -528,21 +528,21 @@ enum ScoreFiles {
 @MainActor
 extension AppViewModel {
 
-    /// 「进入谱面工作室」（菜单 ⇧⌘Y，2026-10-25 用户要的）：
+    /// 「进入 MI Studio」（菜单 ⇧⌘Y，2026-10-25 用户要的）：
     /// **有谱就把那份谱带过去**，没谱就只打开页面让他自己导入。
     ///
-    /// 为什么要跟「送到谱面工作室」分开：那个按钮是"只送谱"，没有谱时只能报错；
+    /// 为什么要跟「送到 MI Studio」分开：那个按钮是"只送谱"，没有谱时只能报错；
     /// 而这个入口是"进那间屋子"，空着手也能进。
     func enterScoreStudio() {
         if studioABC() != nil {
             sendToScoreStudio()
             return
         }
-        studioMessage = "工作室打开了；这边没有谱，可以在里面导入 MusicXML。"
+        studioMessage = "MI Studio 打开了；这边没有谱，可以在里面导入 MusicXML。"
         ScoreStudioClient.shared.open { [weak self] result in
             guard let self else { return }
             if case .failure(let error) = result {
-                self.studioMessage = "打不开工作室：\(error.localizedDescription)"
+                self.studioMessage = "打不开 MI Studio：\(error.localizedDescription)"
             }
         }
     }
@@ -590,7 +590,7 @@ extension AppViewModel {
         return nil
     }
 
-    /// 「送到谱面工作室」：把当前这份谱交给本机 8808 的离线网页工作室，
+    /// 「送到 MI Studio」：把当前这份谱交给本机 8808 的离线网页工作室，
     /// 在那里点音符改，改完点「重新唱」——用来验证「人修过的谱会不会唱得更准」。
     ///
     /// 取谱顺序：面板里改过的 ABC → 选中那首输出目录里的 .abc。
@@ -599,7 +599,7 @@ extension AppViewModel {
             studioMessage = "先选一首有谱子的，或导入一份 MusicXML"
             return
         }
-        studioMessage = "正在送到谱面工作室…"
+        studioMessage = "正在送到 MI Studio…"
         ScoreStudioClient.shared.send(
             abc: text,
             style: form.prompt,
@@ -611,7 +611,7 @@ extension AppViewModel {
             guard let self else { return }
             switch result {
             case .success:
-                self.studioMessage = "已送到谱面工作室；改完点「重新唱」，会回到这里开一轮新的生成"
+                self.studioMessage = "已送到 MI Studio；改完点「重新唱」，会回到这里开一轮新的生成"
             case .failure(let error):
                 self.studioMessage = "送不过去：\(error.localizedDescription)"
             }

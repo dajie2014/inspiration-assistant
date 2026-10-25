@@ -68,7 +68,7 @@ final class AppViewModel: ObservableObject {
     @Published var ss2Summary: String = ""
     /// 交给谱面面板的那份 ABC（带版权头；和弦原样保留）。
     @Published var ss2RepairedABC: String = ""
-    /// 「送到谱面工作室」那一行状态。空串就不显示。
+    /// 「送到 MI Studio」那一行状态。空串就不显示。
     @Published var studioMessage: String = ""
     /// 送进 YuE2 的那份（已剥和弦）。只用于展示，不直接生效。
     @Published var ss2MelodyABC: String = ""
@@ -207,7 +207,7 @@ final class AppViewModel: ObservableObject {
     func takeBridgeStyle() {
         if let text = BridgeInbox.takeNew(.style) { form.prompt = text }
         if let text = BridgeInbox.takeNew(.lyrics) { form.lyrics = text }
-        // 谱面工作室改完谱、点了「重新出歌」——在这儿开一轮新的生成。
+        // MI Studio 改完谱、点了「重新出歌」——在这儿开一轮新的生成。
         if let request = BridgeInbox.takeRegenerate() {
             applyStudioRegenerate(request)
         }
@@ -223,7 +223,7 @@ final class AppViewModel: ObservableObject {
     func applyStudioRegenerate(_ request: BridgeInbox.Regenerate) {
         guard let abc = request.abc, !abc.isEmpty else { return }
         guard !isRunning else {
-            studioMessage = "工作室送来一份改好的谱，但这边正在生成 —— 等这一轮完了再点一次「重新出歌」。"
+            studioMessage = "MI Studio 送来一份改好的谱，但这边正在生成 —— 等这一轮完了再点一次「重新出歌」。"
             return
         }
 
@@ -237,7 +237,7 @@ final class AppViewModel: ObservableObject {
         do {
             try abc.write(to: file, atomically: true, encoding: .utf8)
         } catch {
-            studioMessage = "工作室的谱收下了，但存不下来：\(error.localizedDescription)"
+            studioMessage = "MI Studio 的谱收下了，但存不下来：\(error.localizedDescription)"
             return
         }
 
@@ -256,14 +256,14 @@ final class AppViewModel: ObservableObject {
         let dry = ProcessInfo.processInfo.environment["CS_STUDIO_DRY"] == "1"
             || UserDefaults.standard.bool(forKey: "CSStudioDry")
         if dry {
-            print("[CS] 工作室重唱请求（dry）—— 谱=\(file.lastPathComponent)"
+            print("[CS] MI Studio 重唱请求（dry）—— 谱=\(file.lastPathComponent)"
                 + " 风格=\(form.prompt.prefix(24)) 词=\(form.lyrics.prefix(24))"
                 + " 档=\(yue2Tier)")
-            studioMessage = "（自检）工作室送来一份谱：\(file.lastPathComponent)"
+            studioMessage = "（自检）MI Studio 送来一份谱：\(file.lastPathComponent)"
             return
         }
 
-        studioMessage = "工作室送来一份改好的谱 —— 开始重唱。"
+        studioMessage = "MI Studio 送来一份改好的谱 —— 开始重唱。"
         generate()
     }
 
@@ -1254,21 +1254,21 @@ struct ContentView: View {
             if let pick = vm.items.first(where: { $0.title.contains(probe) }) {
                 vm.selectedID = pick.id
                 let abc = vm.studioABC() ?? ""
-                line = "[CS] 工作室取谱 —— 「\(pick.title)」 \(abc.count) 字节"
+                line = "[CS] MI Studio 取谱 —— 「\(pick.title)」 \(abc.count) 字节"
                     + "（引擎 \(pick.request.engine)）\n"
             } else {
-                line = "[CS] 工作室取谱 —— 列表里没有含「\(probe)」的条目\n"
+                line = "[CS] MI Studio 取谱 —— 列表里没有含「\(probe)」的条目\n"
             }
             // 用 stderr 写：`print` 在重定向时有缓冲，进程被 kill 就丢了。
             FileHandle.standardError.write(Data(line.utf8))
         }
         if env["CS_STUDIO_DIR_PROBE"] == "1" {
-            let line = "[CS] 工作室路径 —— " + ScoreStudioClient.shared.probePaths() + "\n"
+            let line = "[CS] MI Studio 路径 —— " + ScoreStudioClient.shared.probePaths() + "\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
         // 「最近的作品」看哪个文件夹（2026-10-25）：真写一次，把写进去的内容报出来。
         if env["CS_STUDIO_ROOT_PROBE"] == "1" {
-            let line = "[CS] 工作室输出根 —— " + ScoreStudioClient.shared.probeWriteRoot() + "\n"
+            let line = "[CS] MI Studio 输出根 —— " + ScoreStudioClient.shared.probeWriteRoot() + "\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
 
@@ -1898,7 +1898,7 @@ struct ContentView: View {
                     vm.ss2ShowsPanel = true
                 }
             }
-            entryButton("送到谱面工作室", icon: "paintbrush.pointed", busy: false) {
+            entryButton("送到 MI Studio", icon: "paintbrush.pointed", busy: false) {
                 vm.sendToScoreStudio()
             }
             if !vm.studioMessage.isEmpty {

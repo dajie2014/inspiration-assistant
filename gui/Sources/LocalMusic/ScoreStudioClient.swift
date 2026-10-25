@@ -1,12 +1,12 @@
 import Foundation
 import AppKit
 
-/// 「送到谱面工作室」：把当前这份谱交给本机 8808 的离线网页工作室。
+/// 「送到 MI Studio」：把当前这份谱交给本机 8808 的离线网页工作室。
 ///
 /// 用户 2026-10-24 要的：生成好的谱子、或导入来做 cover 的 MusicXML，
 /// 一键送过去 —— 在网页里点音符改，再让他重唱，看看准不准。
 ///
-/// 工作室本体在 `default-workspace/yue2-studio`：
+/// 工作室本体在 `default-workspace/mi-studio`：
 /// 零依赖本地服务器，只监听 127.0.0.1。没在跑就顺手拉起来。
 @MainActor
 final class ScoreStudioClient {
@@ -14,13 +14,15 @@ final class ScoreStudioClient {
 
     private let port: UInt16 = 8808
 
-    /// 谱面工作室是**可选组件**（另一个项目的本地网页服务）。
+    /// 谱面工作室（现在叫 **MI Studio**）是**可选组件**（另一个项目的本地网页服务）。
     ///
     /// 位置不写死：`CS_STUDIO_DIR` 指到哪就用哪；否则按顺序找
-    /// **工作区里的 `yue2-studio`**（现在的实际位置）→ `~/Music/yue2-studio`（旧位置）。
+    /// **工作区里的 `mi-studio`**（现在的实际位置）→ `~/Music/mi-studio` →
+    /// **旧名 `yue2-studio` 的两处**（2026-10-25 改名前的位置，留着兜底：
+    /// 谁只搬了程序没搬目录，也不至于打不开）。
     ///
     /// ⚠️ 2026-10-25 踩到：以前只认 `~/Music/yue2-studio`，而项目其实在
-    /// `default-workspace/yue2-studio` ⇒ 点「进入谱面工作室」时服务器起在
+    /// `default-workspace/` ⇒ 点「进入 MI Studio」时服务器起在
     /// 一个不存在的目录里，页面打不开。现在按 `server.mjs` 是否存在来认。
     private var studioDir: URL {
         let env = ProcessInfo.processInfo.environment["CS_STUDIO_DIR"] ?? ""
@@ -28,12 +30,13 @@ final class ScoreStudioClient {
             return URL(fileURLWithPath: NSString(string: env).expandingTildeInPath)
         }
         let fm = FileManager.default
+        let workspace = BackendClient.locateRoot().deletingLastPathComponent()
+        let home = fm.homeDirectoryForCurrentUser
         var candidates: [URL] = []
-        candidates.append(BackendClient.locateRoot()
-            .deletingLastPathComponent()
-            .appendingPathComponent("yue2-studio"))
-        candidates.append(fm.homeDirectoryForCurrentUser
-            .appendingPathComponent("Music/yue2-studio"))
+        candidates.append(workspace.appendingPathComponent("mi-studio"))
+        candidates.append(home.appendingPathComponent("Music/mi-studio"))
+        candidates.append(workspace.appendingPathComponent("yue2-studio"))
+        candidates.append(home.appendingPathComponent("Music/yue2-studio"))
         for url in candidates
         where fm.fileExists(atPath: url.appendingPathComponent("server.mjs").path) {
             return url
@@ -107,7 +110,7 @@ final class ScoreStudioClient {
                 completion(.failure(NSError(
                     domain: "studio", code: 2,
                     userInfo: [NSLocalizedDescriptionKey:
-                                "工作室没起来（日志在 /tmp/yue2-studio.log）"])))
+                                "MI Studio 没起来（日志在 /tmp/mi-studio.log）"])))
             }
         }
     }
@@ -168,7 +171,7 @@ final class ScoreStudioClient {
                       let id = obj["id"] as? String,
                       let page = URL(string: "http://127.0.0.1:\(self.port)/?session=\(id)") else {
                     completion(.failure(NSError(domain: "studio", code: 1,
-                                                userInfo: [NSLocalizedDescriptionKey: "工作室没有回话"])))
+                                                userInfo: [NSLocalizedDescriptionKey: "MI Studio 没有回话"])))
                     return
                 }
                 NSWorkspace.shared.open(page)
@@ -181,7 +184,7 @@ final class ScoreStudioClient {
         // nohup + &：服务器要活过这次点击，不能因为 app 退出就断。
         let escapedDir = studioDir.path.replacingOccurrences(of: "\"", with: "\\\"")
         let escapedNode = nodePath.path.replacingOccurrences(of: "\"", with: "\\\"")
-        let command = "cd \"\(escapedDir)\" && nohup \"\(escapedNode)\" server.mjs >> /tmp/yue2-studio.log 2>&1 &"
+        let command = "cd \"\(escapedDir)\" && nohup \"\(escapedNode)\" server.mjs >> /tmp/mi-studio.log 2>&1 &"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
