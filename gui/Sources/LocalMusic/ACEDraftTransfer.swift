@@ -32,12 +32,15 @@ struct ACETransferResult {
 
 enum ACEDraftTransfer {
 
-    /// 送过去的东西：音频 + 谱子，两样都可能没有（界面上是两个按钮，各送一样）。
+    /// 送过去的东西：音频 + 谱子 + MIDI，三样都可能没有（界面上是几个按钮，各送一样）。
     struct Payload {
         var audio: URL?
         /// **必须是 MusicXML**（`.xml` / `.musicxml`）—— ABC 是 YuE2 认的记谱文本，
         /// ACE 不认它。脚本那边也会再拦一道。
         var score: URL?
+        /// 这一首的 MIDI（音频拆轨的产物）。ACE 会按源轨建通用 MIDI 轨，
+        /// 脚本再按 MIDI 原名把轨道名改好（2026-10-25 用户实测后让接的）。
+        var midi: URL?
         /// 这一首的名字，用来给 ACE 里新建的轨起名。
         var title: String
     }
@@ -49,14 +52,14 @@ enum ACEDraftTransfer {
 
     /// 把一首草稿送进 ACE Studio。**会阻塞**（几十秒封顶），调用方放后台线程跑。
     ///
-    /// 两样都给了就**依次**送（谱子在前）—— 别并行：ACE 那边两条导入同时在跑
-    /// 会互相插队，读回来的回执也对不上号。
+    /// 几样都给了就**依次**送（谱子 → MIDI → 音频）—— 别并行：ACE 那边两条导入
+    /// 同时在跑会互相插队，读回来的回执也对不上号。
     static func send(_ payload: Payload) -> ACETransferResult {
         guard FileManager.default.fileExists(atPath: script.path) else {
             return .failure("找不到送 ACE 的脚本（scripts/push_to_ace.py）。")
         }
-        if payload.audio == nil && payload.score == nil {
-            return .failure("这一首还没有音频、也没有谱子，没东西可送。")
+        if payload.audio == nil && payload.score == nil && payload.midi == nil {
+            return .failure("这一首还没有音频、也没有谱子和 MIDI，没东西可送。")
         }
 
         var landed: [String] = []
@@ -64,6 +67,10 @@ enum ACEDraftTransfer {
 
         if let score = payload.score {
             let one = push(what: "score", path: score, title: payload.title)
+            if let note = one.note { landed.append(note) } else { problems.append(one.reason) }
+        }
+        if let midi = payload.midi {
+            let one = push(what: "midi", path: midi, title: payload.title)
             if let note = one.note { landed.append(note) } else { problems.append(one.reason) }
         }
         if let audio = payload.audio {

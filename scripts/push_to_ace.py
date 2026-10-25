@@ -13,6 +13,11 @@ CA 那边**要再踩一遍**，而且以后两份必然漂移。
 用法：
     push_to_ace.py --what score --title "示例作品" "<...>.xml"
     push_to_ace.py --what audio --title "示例作品" "<...>.flac"
+    push_to_ace.py --what midi  --title "示例作品" "<...>.mid"
+
+★ `--what midi` 是 2026-10-25 加的（用户当天实测后让接上的）：MIDI 导进
+  ACE 会按源轨各建一条轨，但**轨道名一律叫「MIDI 音轨」**，MIDI 里的名字
+  只落在 **clip 名**上。所以这一支做的是「导入 + 把 clip 上的名字搬回轨道名」。
 
 输出（stdout，一行 JSON）：
     {"ok": true,  "message": "谱声部「Vocal Melody」→ 1 条唱轨（歌词与速度一起进去了）"}
@@ -61,6 +66,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SPLITTER = os.path.join(HERE, "split_score_parts.py")
 
 MUSICXML_EXTS = {".xml", ".musicxml", ".mxl"}
+MIDI_EXTS = {".mid", ".midi"}
 
 
 def run_tool(executable, arguments, timeout=90):
@@ -131,13 +137,39 @@ def ensure_online():
             "到 ACE 的「Connect to Agents」里确认一下外部访问是开着的。")
 
 
-def track_uuids():
-    """工程里现有的轨 uuid 集合 —— 用来算"这一趟新加了哪几条"。"""
+def track_records():
+    """工程里的整份轨道清单（`track list` 的 tracks）；读不到返回 []。
+
+    `push_midi` 要的不只是 uuid —— 还得知道每条轨的 index（定位它的 clip）
+    和名字（看 ACE 给的是什么默认名）。
+    """
     code, text = run_cli(["track", "list", "--json"], timeout=15)
     got = as_json(text)
     if code != 0 or not got:
-        return set()
-    return {t.get("trackUuid") for t in got.get("tracks", []) if t.get("trackUuid")}
+        return []
+    return got.get("tracks") or []
+
+
+def track_uuids():
+    """工程里现有的轨 uuid 集合 —— 用来算"这一趟新加了哪几条"。"""
+    return {t.get("trackUuid") for t in track_records() if t.get("trackUuid")}
+
+
+def first_clip_name(track_index):
+    """一条轨上第一个 clip 的名字；读不到给空字符串。
+
+    ★ 为什么从这里取名字：ACE 导入 MIDI 时，**MIDI 的轨道名落在 clip 名上**，
+      轨道名反而是默认的「MIDI 音轨」（2026-10-25 实测）。
+    """
+    code, text = run_cli(["clip", "list", "--track-index", str(track_index), "--json"],
+                         timeout=15)
+    got = as_json(text)
+    if code != 0 or not got:
+        return ""
+    clips = got.get("clips") or []
+    if not clips:
+        return ""
+    return (clips[0].get("clipName") or "").strip()
 
 
 def import_with_retry(arguments, attempts=3, pause=5):
@@ -258,9 +290,70 @@ def push_audio(path):
     return True, f"音频 {os.path.basename(path)} → 1 条音频轨{note}"
 
 
+def push_midi(path):
+    """MIDI → 通用 MIDI 轨，**并把 MIDI 里的轨道名搬到 ACE 的轨道名上**。
+
+    为什么要有这一条（2026-10-25 实测，用户当场让接的）：
+      · ACE 导入 MIDI 会按源轨各建一条轨，但**轨道名一律是「MIDI 音轨」**；
+        MIDI 里的名字（`clean electric guitar` / `drums`…）只落在 **clip 名**上。
+      · 于是拖进 ACE 是一排「MIDI 音轨」，得自己猜哪条是哪条 —— 正是
+        `MIDITrackNames` 在 DAW 那边要解决的问题，换个地方又出现一次。
+      ⇒ 导入后读每条新轨的 clip 名，再 `track rename` 把名字搬上去。
+        名字只是可读性：搬不动也不让整件事失败，音符已经进去了。
+    """
+    if not os.path.isfile(path):
+        return False, f"找不到那一份 MIDI：{os.path.basename(path)}"
+    if os.path.splitext(path)[1].lower() not in MIDI_EXTS:
+        ext = os.path.splitext(path)[1].lstrip(".") or "?"
+        return False, f"这不是 MIDI 文件（.{ext}）。"
+
+    before = track_uuids()
+    code, text = import_with_retry(["import", "file", "--path", path,
+                                    "--with-tempo", "true",
+                                    "--with-time-signatures", "true",
+                                    "--json"])
+    if code != 0:
+        return False, f"ACE 没能读进那份 MIDI：{cli_reason(text)}"
+
+    fresh = [t for t in track_records() if t.get("trackUuid") not in before]
+    fresh.sort(key=lambda t: t.get("trackIndex") or 0)
+    if not fresh:
+        return False, "MIDI 导进去之后，ACE 里没多出轨道，像是没落下来。"
+
+    # ★ 名字从 **clip 名**搬过来（导入时 ACE 就是把 MIDI 轨名放在那儿）。
+    #   空名、或者本身就是 ACE 默认名的不搬 —— 拿「MIDI 音轨_片段_2」去改名
+    #   比默认名还难认。
+    wanted = []
+    used = set()
+    for t in fresh:
+        name = first_clip_name(t.get("trackIndex"))
+        if not name or name.startswith("MIDI 音轨"):
+            continue
+        if name in used:
+            n = 2
+            while f"{name} {n}" in used:
+                n += 1
+            name = f"{name} {n}"
+        used.add(name)
+        wanted.append((t.get("trackUuid"), name))
+
+    renamed = 0
+    for uuid, name in wanted:
+        code, _ = run_cli(["track", "rename", "--track-uuid", uuid,
+                           "--new-name", name], timeout=15)
+        if code == 0:
+            renamed += 1
+
+    if not wanted:
+        return True, f"MIDI {len(fresh)} 条轨（里面没有名字可搬，ACE 里还是默认名）"
+    detail = "、".join(name for _, name in wanted)
+    tail = "" if renamed == len(wanted) else f"（{renamed}/{len(wanted)} 条改名成功）"
+    return True, f"MIDI {len(fresh)} 条轨：{detail}{tail}"
+
+
 def main():
     parser = argparse.ArgumentParser(add_help=True)
-    parser.add_argument("--what", required=True, choices=["score", "audio"])
+    parser.add_argument("--what", required=True, choices=["score", "audio", "midi"])
     parser.add_argument("--title", default="")
     parser.add_argument("path")
     args = parser.parse_args()
@@ -285,6 +378,8 @@ def main():
     try:
         if args.what == "score":
             ok, message, scratch = push_score(args.path, args.title)
+        elif args.what == "midi":
+            ok, message = push_midi(args.path)
         else:
             ok, message = push_audio(args.path)
     finally:

@@ -59,6 +59,20 @@ final class BackendClient: ObservableObject {
         if let env = ProcessInfo.processInfo.environment["ACE_LOCAL_ROOT"], !env.isEmpty {
             return URL(fileURLWithPath: env)
         }
+        // ★ 2026-10-25：打包时把源码根写进 `Contents/Resources/root.txt`。
+        //   装在 /Applications 时，往上找六层到不了项目根 —— 以前只能落到
+        //   `~/Music/MySongwriter`，于是**双击打开是空列表**。
+        //   仍然校验 `render_adapter.sh` 在不在：项目搬走了，这一条自动作废。
+        if let resources = Bundle.main.resourceURL {
+            let stamp = resources.appendingPathComponent("root.txt")
+            if let text = try? String(contentsOf: stamp, encoding: .utf8) {
+                let root = URL(fileURLWithPath: text.trimmingCharacters(in: .whitespacesAndNewlines))
+                if FileManager.default.fileExists(
+                    atPath: root.appendingPathComponent("render_adapter.sh").path) {
+                    return root
+                }
+            }
+        }
         var dir = Bundle.main.bundleURL.standardizedFileURL
         for _ in 0..<6 {
             let candidate = dir.appendingPathComponent("render_adapter.sh")

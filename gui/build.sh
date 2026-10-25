@@ -109,6 +109,16 @@ fi
 cp "$CHANGELOG" "$OUT_APP/Contents/Resources/CHANGELOG.md"
 echo "  版本历史已装入（CHANGELOG.md · ${VERSION}）"
 
+# ★ 2026-10-25：把**源码根**写进包里。
+#   为什么：`BackendClient.locateRoot()` 靠"从 .app 往上找 render_adapter.sh"定位；
+#   装在 /Applications 后，往上找六层也到不了项目根 ⇒ 落到 `~/Music/MySongwriter`，
+#   于是**双击打开是空列表、生成也出不了歌**。用户平时从项目里启动，所以没撞上，
+#   但"装好的那一份"应该自己能找到家。
+#   这里写一份绝对路径，程序先读它（仍然校验 render_adapter.sh 在不在，
+#   项目搬走了就自动回到原来的找法）。
+printf '%s\n' "$ROOT" > "$OUT_APP/Contents/Resources/root.txt"
+echo "  源码根已写入（root.txt）"
+
 cat > "$OUT_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -267,6 +267,27 @@ struct GenerationItem: Identifiable, Equatable {
         }
         return nil
     }
+
+    /// 这一首的 MIDI（「上传音频」拆轨的产物）。找不到就返回 nil。
+    ///
+    /// 三种放法都认：与音频同名的 `.mid`、拆轨固定的 `拆轨.mid`、
+    /// 以及目录里唯一的那一份 `.mid`。**只在这一首自己的目录里找** ——
+    /// 别人的 MIDI 不能混进来。
+    var midiURL: URL? {
+        guard let path = outputPath else { return nil }
+        let out = URL(fileURLWithPath: path)
+        let folder = out.deletingLastPathComponent()
+        let sameName = out.deletingPathExtension().appendingPathExtension("mid")
+        if FileManager.default.fileExists(atPath: sameName.path) { return sameName }
+        let split = folder.appendingPathComponent("拆轨.mid")
+        if FileManager.default.fileExists(atPath: split.path) { return split }
+        if let all = try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil) {
+            let mids = all.filter { $0.pathExtension.lowercased() == "mid" }
+            if mids.count == 1 { return mids[0] }
+        }
+        return nil
+    }
 }
 
 /// 调色板 —— 固定一套深色（对着 ACE Studio 那个面板的样子做）。

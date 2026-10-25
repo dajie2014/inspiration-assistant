@@ -65,6 +65,39 @@ enum LiveTransfer {
             message: name.isEmpty ? "「\(track)」轨上放好了。" : "「\(track)」轨上放好了《\(name)》。")
     }
 
+    /// 把一份**拆轨 MIDI** 送进 Live —— 每条源轨一条 MIDI 轨（2026-10-25 加的）。
+    ///
+    /// 跟 `send(folder:)` 的区别：那边送整首音频、落在一条音频轨上；
+    /// 这边送的是 MIDI，**每条源轨各建一条 MIDI 轨**，轨名照 MIDI 原名。
+    /// **阻塞**（几千个音符要写一会儿），调用方放后台线程。
+    static func sendMIDI(_ midi: URL) -> LiveTransferResult {
+        guard FileManager.default.fileExists(atPath: script.path) else {
+            return LiveTransferResult(ok: false, message: "找不到 scripts/push_to_live.py。")
+        }
+        let result = run("/usr/bin/python3",
+                         [script.path, "--midi", midi.path, "--json"], timeout: 120)
+        guard let data = result.text.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            let tail = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return LiveTransferResult(
+                ok: false,
+                message: tail.isEmpty ? "送 MIDI 的脚本没吭声。" : String(tail.suffix(200)))
+        }
+        guard (object["ok"] as? Bool) ?? false else {
+            return LiveTransferResult(ok: false,
+                                      message: (object["error"] as? String) ?? "Live 那边没接住。")
+        }
+        let payload = (object["result"] as? [String: Any]) ?? [:]
+        let tracks = (payload["tracks"] as? [[String: Any]]) ?? []
+        let names = tracks.compactMap { $0["track"] as? String }
+        let bar = (payload["start_bar"] as? Double).map { barText($0) } ?? "1"
+        let detail = names.isEmpty ? "" : "（\(names.joined(separator: "、"))）"
+        return LiveTransferResult(
+            ok: true,
+            message: "已放进编曲视图：从第 \(bar) 小节起，\(names.count) 条 MIDI 轨\(detail)。")
+    }
+
     /// 小节号按人话打：整数就整数，落在半小节就留两位。
     private static func barText(_ bar: Double) -> String {
         if abs(bar - bar.rounded()) < 0.001 {

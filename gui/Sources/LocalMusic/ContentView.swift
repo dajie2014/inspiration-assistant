@@ -843,6 +843,47 @@ final class AppViewModel: ObservableObject {
              missing: "这一首还没有音频。")
     }
 
+    /// 把**拆轨的 MIDI** 送进 ACE Studio（2026-10-25 加的）。
+    ///
+    /// 跟「谱子 → ACE」不是一回事：谱子送进去是**一条唱轨**（带词），
+    /// MIDI 送进去是**每条源轨一条通用 MIDI 轨**（默认钢琴，当参考/继续改）。
+    /// MIDI 里原来的轨道名，ACE 不会自己拿去做轨道名 —— 脚本里补了这一步。
+    func sendMIDIToACE(_ item: GenerationItem) {
+        send(item, score: nil, midi: item.midiURL, audio: nil,
+             missing: "这一首还没有 MIDI。")
+    }
+
+    /// 把**拆轨的 MIDI** 送进 Live（2026-10-25 用户要的：
+    /// 「顺便加一个送MIDI到live的按钮」）。
+    ///
+    /// 跟「生成完自动送」那条不同：那条送的是**整首音频**，落在一条音频轨上；
+    /// 这条送的是 MIDI，**每条源轨在 Live 里各建一条 MIDI 轨**，轨名照原名。
+    /// Live 没连上时**不静默**（用户是主动按的，得知道为什么没动）。
+    func sendMIDIToLive(_ item: GenerationItem) {
+        guard let midi = item.midiURL else {
+            transferOK = false
+            transferMessage = "这一首还没有 MIDI。"
+            return
+        }
+        guard liveState == .connected else {
+            transferOK = false
+            transferMessage = "先连上 Live，再把 MIDI 送过去。"
+            return
+        }
+        guard !transferring else { return }
+        transferring = true
+        transferOK = nil
+        transferMessage = "正在把 MIDI 送进 Live…"
+        Task.detached { [weak self] in
+            let result = LiveTransfer.sendMIDI(midi)
+            await MainActor.run {
+                self?.transferring = false
+                self?.transferOK = result.ok
+                self?.transferMessage = result.message
+            }
+        }
+    }
+
     /// 把 **Live 里选中的那个 clip** 送进 ACE Studio（2026-10-18 用户要的那座桥）。
     ///
     /// 跟上面两个按钮的区别：那两个送的是**列表里选中的这一首**；
@@ -885,10 +926,13 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 两件分开的动作用的同一套壳：状态、线程、回报都在这儿，免得写两遍。
-    private func send(_ item: GenerationItem, score: URL?, audio: URL?, missing: String) {
+    /// 几件分开的动作用的同一套壳：状态、线程、回报都在这儿，免得写几遍。
+    ///
+    /// `midi` 有默认值 —— 谱子和音频那两条老路不用改，MIDI 那条自己传。
+    private func send(_ item: GenerationItem, score: URL?, midi: URL? = nil,
+                      audio: URL?, missing: String) {
         guard !transferring else { return }
-        guard score != nil || audio != nil else {
+        guard score != nil || audio != nil || midi != nil else {
             transferOK = false
             transferMessage = missing
             return
@@ -898,7 +942,8 @@ final class AppViewModel: ObservableObject {
         transferOK = nil
         transferMessage = "正在往 ACE Studio 送…（它没开着的话，我会先把它打开）"
 
-        let payload = ACEDraftTransfer.Payload(audio: audio, score: score, title: item.title)
+        let payload = ACEDraftTransfer.Payload(audio: audio, score: score,
+                                               midi: midi, title: item.title)
         Task.detached { [weak self] in
             let result = ACEDraftTransfer.send(payload)
             await MainActor.run {
@@ -1168,8 +1213,8 @@ struct ContentView: View {
         // `clip lyrics` / `tempo get` 回读，才知道到底送对了没有。
         // `CS_SEND_TITLE=<子串>` 可以指定送哪一首（不指定就送列表里第一条有产物的）——
         // 因为"哪一条有歌词"是因作品而异的，验歌词时得能点名。
-        // `CS_SEND_WHAT=score|audio` 只送一样（不写就两样都送）——
-        // 界面上本来就是**两个按钮**，自检得能分别验。
+        // `CS_SEND_WHAT=score|midi|audio` 只送一样（不写就谱子+音频都送）——
+        // 界面上是**几个按钮**，自检得能分别验；MIDI 那条也算一样。
         if env["CS_SEND_TO_ACE"] == "1" {
             let wanted = env["CS_SEND_TITLE"] ?? ""
             let pick = vm.items.first {
@@ -1181,9 +1226,11 @@ struct ContentView: View {
                 let what = env["CS_SEND_WHAT"] ?? "both"
                 print("[CS] ACE 传输 —— 送「\(pick.title)」（\(what)）"
                     + "（音频=\(pick.outputPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "无")"
-                    + " / 谱子=\(pick.scoreURL?.lastPathComponent ?? "无")）")
+                    + " / 谱子=\(pick.scoreURL?.lastPathComponent ?? "无")"
+                    + " / MIDI=\(pick.midiURL?.lastPathComponent ?? "无")）")
                 switch what {
                 case "score": vm.sendScoreToACE(pick)
+                case "midi": vm.sendMIDIToACE(pick)
                 case "audio": vm.sendAudioToACE(pick)
                 default:
                     vm.sendScoreToACE(pick)
@@ -1213,6 +1260,30 @@ struct ContentView: View {
                 }
             } else {
                 print("[CS] ACE 传输 —— 列表里没有可送的条目")
+            }
+        }
+        // 送 Live 的 MIDI：`CS_SEND_TO_LIVE=midi` + `CS_SEND_TITLE=<子串>`。
+        // 跟 ACE 那条一样的道理 —— 界面上的按钮点不到，得能从头跑一遍。
+        if env["CS_SEND_TO_LIVE"] == "midi" {
+            let wanted = env["CS_SEND_TITLE"] ?? ""
+            let pick = vm.items.first {
+                ($0.isFinished || $0.isScoreOnly)
+                    && (wanted.isEmpty || $0.title.contains(wanted))
+            }
+            if let pick {
+                vm.selectedID = pick.id
+                print("[CS] MIDI 送 Live —— 送「\(pick.title)」"
+                    + "（MIDI=\(pick.midiURL?.lastPathComponent ?? "无")）")
+                vm.sendMIDIToLive(pick)
+                Task { @MainActor in
+                    let deadline = Date().addingTimeInterval(120)
+                    while vm.transferring, Date() < deadline {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                    }
+                    print("[CS] MIDI 送 Live 结果 —— \(vm.transferMessage)")
+                }
+            } else {
+                print("[CS] MIDI 送 Live —— 列表里没有可送的条目")
             }
         }
         // 「文件」菜单那几条：菜单我点不动（读菜单要「辅助功能」权限，本机没给，
@@ -1862,6 +1933,14 @@ struct ContentView: View {
                       enabled: hasAudio(item)) {
                 if let item { vm.sendAudioToACE(item) }
             }
+            // 「MIDI → ACE」（2026-10-25）：这一首有拆轨的 MIDI 才摆出来 ——
+            // 没有的时候不占位置，免得一行塞满按不动的按钮。
+            if let item, item.midiURL != nil {
+                aceButton("MIDI → ACE", systemImage: "pianokeys",
+                          enabled: hasMIDI(item)) {
+                    vm.sendMIDIToACE(item)
+                }
+            }
             // 「Live 选中 → ACE」（2026-10-18）：送的是 Live 里选中的那一段，
             // 不是列表里的这一首 —— 分轨后的音频、或转好的 MIDI 都走这里。
             aceButton("Live 选中 → ACE", systemImage: "arrow.right.doc.on.clipboard",
@@ -1873,6 +1952,14 @@ struct ContentView: View {
             aceButton("ACE 选中 → Live", systemImage: "arrow.left.doc.on.clipboard",
                       enabled: vm.liveState == .connected && !vm.transferring) {
                 vm.sendACEClipToLive()
+            }
+            // 「MIDI → Live」（2026-10-25）：这一首有拆轨 MIDI 才摆出来，
+            // 跟「MIDI → ACE」同一个分寸（没有就不占位置）。
+            if let item, item.midiURL != nil {
+                aceButton("MIDI → Live", systemImage: "pianokeys",
+                          enabled: vm.liveState == .connected && hasMIDI(item)) {
+                    vm.sendMIDIToLive(item)
+                }
             }
             liveButton
             if !vm.transferMessage.isEmpty {
@@ -1946,6 +2033,12 @@ struct ContentView: View {
         guard let item, !vm.transferring else { return false }
         guard let path = item.outputPath else { return false }
         return FileManager.default.fileExists(atPath: path)
+    }
+
+    /// 这一首有没有**可送的 MIDI**（「上传音频」拆轨之后才有）。
+    private func hasMIDI(_ item: GenerationItem?) -> Bool {
+        guard let item, !vm.transferring else { return false }
+        return item.midiURL != nil
     }
 
     /// 送 ACE 的按钮的样子 —— 跟「打开文件夹」同一副骨架，字号小一号：
