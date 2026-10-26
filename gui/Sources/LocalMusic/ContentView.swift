@@ -10,6 +10,8 @@ import Combine
 final class AppViewModel: ObservableObject {
 
     @Published var items: [GenerationItem] = []
+    /// LoRA 正在转格式（转的时候按钮上不写字，免得以为没反应）。
+    @Published var loraBusy = false
     @Published var selectedID: UUID?
     @Published var form = GenerationRequest()
     @Published var mode: GenerationMode = .generate
@@ -608,9 +610,57 @@ final class AppViewModel: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.data]
         guard panel.runModal() == .OK, let file = panel.url else { return }
-        form.loraPath = file.path
         form.loraScale = 1.0
-        exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+
+        // ★ 2026-10-25：社区文件（ComfyUI / kohya 那套）用 `lora_A` / `lora_B` 命名，
+        //   而本机引擎只认 `lora_down` / `lora_up` —— 差一个词，**而且它不报错**，
+        //   `load_lora` 里 try/except 一吞，表现就是"挂了但没效果"。
+        //   所以在选完这一步就把格式对好：同名 `-mlx` 版本在就直接用，不在就当场转。
+        let base = file.deletingPathExtension()
+        let converted = base.deletingLastPathComponent()
+            .appendingPathComponent(base.lastPathComponent + "-mlx.safetensors")
+        if file.lastPathComponent.hasSuffix("-mlx.safetensors")
+            || FileManager.default.fileExists(atPath: converted.path) {
+            form.loraPath = file.lastPathComponent.hasSuffix("-mlx.safetensors")
+                ? file.path : converted.path
+            exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+            return
+        }
+        convertLoRA(file, to: converted)
+    }
+
+    /// 把社区格式的 LoRA 转成本机引擎认识的写法（几秒，112 MB 的文件也很快）。
+    /// 用的是 `loras/convert_lora.py`（脚本在，逻辑都在那儿，界面只负责调用）。
+    private func convertLoRA(_ file: URL, to converted: URL) {
+        let python = client.root.appendingPathComponent("yue2-local/mlx-Yue/.venv/bin/python")
+        let script = client.root.appendingPathComponent("loras/convert_lora.py")
+        guard FileManager.default.fileExists(atPath: python.path),
+              FileManager.default.fileExists(atPath: script.path) else {
+            exportMessage = "这个 LoRA 的格式本机引擎不认，而转换工具没找到（loras/convert_lora.py）"
+            return
+        }
+        loraBusy = true
+        exportMessage = "正在把这件 LoRA 转成本机格式…"
+        let p = Process()
+        p.executableURL = python
+        p.arguments = [script.path, file.path]
+        p.terminationHandler = { [weak self] proc in
+            Task { @MainActor in
+                guard let self else { return }
+                self.loraBusy = false
+                if proc.terminationStatus == 0,
+                   FileManager.default.fileExists(atPath: converted.path) {
+                    self.form.loraPath = converted.path
+                    self.exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+                } else {
+                    self.exportMessage = "这份 LoRA 转不了（可能不是 YuE2 的），换个文件试试"
+                }
+            }
+        }
+        do { try p.run() } catch {
+            loraBusy = false
+            exportMessage = "转换起不来：\(error.localizedDescription)"
+        }
     }
 
     /// 面板里「保存并接上」：改过的 ABC 存进 `abc-cache/edited/`，
@@ -1150,6 +1200,8 @@ struct ContentView: View {
     /// 「输入歌词」那个按钮打开的小窗。写在视图里，不进 ViewModel ——
     /// 它纯粹是界面开合，跟生成状态无关。
     @State private var showsLyricsEditor = false
+    /// 「换嗓子」的小窗（2026-10-25）。同样只是界面开合。
+    @State private var showsVoiceSwap = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1171,6 +1223,7 @@ struct ContentView: View {
         .onChange(of: vm.form.lyrics) { _, _ in vm.scheduleBridgeWriteBack() }
         .sheet(isPresented: $vm.ss2ShowsPanel) { scoreEditPanel }
         .sheet(isPresented: $showsLyricsEditor) { lyricsEditorPanel }
+        .sheet(isPresented: $showsVoiceSwap) { VoiceSwapView() }
     }
 
     /// 自检开关（都只影响带环境变量启动的那一次，正常双击完全不受影响）：
@@ -1884,7 +1937,7 @@ struct ContentView: View {
             entryButton(vm.form.loraPath.isEmpty
                         ? "挂 LoRA"
                         : "LoRA：\(URL(fileURLWithPath: vm.form.loraPath).lastPathComponent)",
-                        icon: "wand.and.stars", busy: false) {
+                        icon: "wand.and.stars", busy: vm.loraBusy) {
                 vm.pickLoRA()
             }
             if !vm.form.loraPath.isEmpty {
@@ -1892,6 +1945,11 @@ struct ContentView: View {
                     vm.form.loraPath = ""
                     vm.form.loraScale = 1.0
                 }
+            }
+            // 「换嗓子」（2026-10-25）：先出一首歌，再用一段录音把嗓子换掉。
+            // 跟「生成」是前后两段 —— 所以它开一个小窗，不占生成那条路的位置。
+            entryButton("换嗓子", icon: "person.wave.2", busy: false) {
+                showsVoiceSwap = true
             }
             if !vm.ss2RepairedABC.isEmpty {
                 entryButton("看乐谱", icon: "music.note.list", busy: false) {
