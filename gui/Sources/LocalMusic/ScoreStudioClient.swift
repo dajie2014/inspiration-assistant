@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// 「送到 MI Studio」：把当前这份谱交给本机 8808 的离线网页工作室。
+/// 「送到 MIR Studio」：把当前这份谱交给本机 8808 的离线网页工作室。
 ///
 /// 用户 2026-10-24 要的：生成好的谱子、或导入来做 cover 的 MusicXML，
 /// 一键送过去 —— 在网页里点音符改，再让他重唱，看看准不准。
@@ -14,7 +14,7 @@ final class ScoreStudioClient {
 
     private let port: UInt16 = 8808
 
-    /// 谱面工作室（现在叫 **MI Studio**）是**可选组件**（另一个项目的本地网页服务）。
+    /// 谱面工作室（现在叫 **MIR Studio**）是**可选组件**（另一个项目的本地网页服务）。
     ///
     /// 位置不写死：`CS_STUDIO_DIR` 指到哪就用哪；否则按顺序找
     /// **工作区里的 `mi-studio`**（现在的实际位置）→ `~/Music/mi-studio` →
@@ -22,7 +22,7 @@ final class ScoreStudioClient {
     /// 谁只搬了程序没搬目录，也不至于打不开）。
     ///
     /// ⚠️ 2026-10-25 踩到：以前只认 `~/Music/yue2-studio`，而项目其实在
-    /// `default-workspace/` ⇒ 点「进入 MI Studio」时服务器起在
+    /// `default-workspace/` ⇒ 点「进入 MIR Studio」时服务器起在
     /// 一个不存在的目录里，页面打不开。现在按 `server.mjs` 是否存在来认。
     private var studioDir: URL {
         let env = ProcessInfo.processInfo.environment["CS_STUDIO_DIR"] ?? ""
@@ -110,7 +110,7 @@ final class ScoreStudioClient {
                 completion(.failure(NSError(
                     domain: "studio", code: 2,
                     userInfo: [NSLocalizedDescriptionKey:
-                                "MI Studio 没起来（日志在 /tmp/mi-studio.log）"])))
+                                "MIR Studio 没起来（日志在 /tmp/mi-studio.log）"])))
             }
         }
     }
@@ -171,7 +171,7 @@ final class ScoreStudioClient {
                       let id = obj["id"] as? String,
                       let page = URL(string: "http://127.0.0.1:\(self.port)/?session=\(id)") else {
                     completion(.failure(NSError(domain: "studio", code: 1,
-                                                userInfo: [NSLocalizedDescriptionKey: "MI Studio 没有回话"])))
+                                                userInfo: [NSLocalizedDescriptionKey: "MIR Studio 没有回话"])))
                     return
                 }
                 NSWorkspace.shared.open(page)

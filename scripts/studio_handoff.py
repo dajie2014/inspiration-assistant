@@ -10,14 +10,14 @@ LoRA 和内存闸；工作室只负责「改谱」，唱归主程序。
 
 **通道**：`~/Library/Application Support/Composer Bridge/regenerate.json`
 —— 跟风格/歌词同一只信箱（Swift 那边叫 `BridgeInbox`）。主程序在启动、
-窗口被激活、收到分布式通知时各读一次；这里写完再 `open -a 灵感助手`
+窗口被激活、收到分布式通知时各读一次；这里写完再 `open -a 灵感路由`
 把窗口叫到前面，就等于按下了「生成」。
 
 用法：
     studio_handoff.py --abc-file 改后.abc --style "…" --lyrics "…" \\
                       --seed 42 --steps 8 --title "歌名"
 
-输出一行 JSON：{"ok": true, "message": "已交给灵感助手（… 字节的谱）"}
+输出一行 JSON：{"ok": true, "message": "已交给灵感路由（… 字节的谱）"}
 """
 import argparse
 import json
@@ -29,7 +29,9 @@ import time
 BRIDGE = os.path.join(os.path.expanduser("~"), "Library",
                       "Application Support", "Composer Bridge")
 TARGET = os.path.join(BRIDGE, "regenerate.json")
-APP = "灵感助手"
+# ★ 2026-10-27 改名：先叫新名；叫不醒再退回旧名 ——
+#   过渡期「灵感路由」和「灵感助手」两个 app 可能同时还在，不能因此失灵。
+APP_NAMES = ["灵感路由", "灵感助手"]
 
 
 def main():
@@ -82,14 +84,17 @@ def main():
     os.replace(temporary, target)
 
     if not args.no_open:
-        try:
-            subprocess.run(["open", "-a", APP], check=False, timeout=10)
-        except Exception:
-            # 叫不醒也只是界面不跳 —— 信已经写好了，切一下窗口照样会读。
-            pass
+        for name in APP_NAMES:
+            try:
+                opened = subprocess.run(["open", "-a", name], check=False, timeout=10)
+                if opened.returncode == 0:
+                    break
+            except Exception:
+                # 叫不醒也只是界面不跳 —— 信已经写好了，切一下窗口照样会读。
+                continue
 
     print(json.dumps({"ok": True,
-                      "message": "已交给灵感助手（%d 字节的谱）" % len(abc)},
+                      "message": "已交给灵感路由（%d 字节的谱）" % len(abc)},
                      ensure_ascii=False))
     return 0
 

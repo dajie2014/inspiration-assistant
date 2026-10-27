@@ -3,7 +3,7 @@ import Foundation
 
 /// audio.cpp（Mac 预编译版）的客户端 —— 只管「找到它、跑一次、把结果拿回来」。
 ///
-/// 背景：灵感助手原来自带一套 SheetSage2（Python + MLX，2.6 GB 权重）。
+/// 背景：灵感路由（MIR）原来自带一套 SheetSage2（Python + MLX，2.6 GB 权重）。
 /// 2026-10-24 那套撤了，换成 `audiocpp`：同一件事，**60 秒的歌 25 秒出结果**，
 /// 读的还是一份 GGUF（2.7 GB）。MuScriptor 更轻，412 MB，5 秒出六轨 MIDI。
 ///
@@ -184,6 +184,25 @@ enum AudioCppClient {
             throw Failure.failed("没写出谱子（退出码 \(result.code)）。\(result.tail)")
         }
         return text
+    }
+
+    /// 把听出来的原始 ABC 整理成 YuE2 认的双行谱（Vocal + Ins）。
+    ///
+    /// 2026-10-26 实验：旋律进 Vocal，和弦根音进 Ins。
+    /// 脚本和谱面工作室共用一份：`scripts/abc_two_voices.py`。
+    static func buildTwoVoices(from abc: URL, to out: URL) -> Bool {
+        let script = BackendClient.locateRoot().appendingPathComponent("scripts/abc_two_voices.py")
+        guard FileManager.default.fileExists(atPath: script.path) else { return false }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        p.arguments = [script.path, abc.path, out.path]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+            && FileManager.default.fileExists(atPath: out.path)
     }
 
     /// 音频 → MIDI（六轨：人声 / 吉他 / 贝斯 / 鼓 / 钢琴……）。

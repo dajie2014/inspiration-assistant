@@ -143,7 +143,7 @@ final class BackendClient: ObservableObject {
             //
             // 先自己看一眼，说不通就当场说清楚 —— 别让它变成一次无声的等待。
             if !FileManager.default.isReadableFile(atPath: script) {
-                lastError = "系统没让 灵感助手 读你的项目文件夹。到「系统设置 → 隐私与安全性 → 文件与文件夹」里把 灵感助手 打开，再点一次生成。"
+                lastError = "系统没让 灵感路由 读你的项目文件夹。到「系统设置 → 隐私与安全性 → 文件与文件夹」里把 灵感路由 打开，再点一次生成。"
                 progress = ProgressSnapshot(percent: 0, state: "failed",
                                             message: "打不开项目文件夹", updated: 0,
                                             output: nil)

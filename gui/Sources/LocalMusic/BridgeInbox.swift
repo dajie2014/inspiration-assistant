@@ -103,9 +103,9 @@ enum BridgeInbox {
         return trimmed
     }
 
-    // MARK: - MI Studio 的「重新唱一遍」
+    // MARK: - MIR Studio 的「重新唱一遍」
 
-    /// MI Studio 送来的重唱请求（2026-10-25）。
+    /// MIR Studio 送来的重唱请求（2026-10-25）。
     ///
     /// 用户原话：「修改完乐谱之后，重新唱一遍。就自动触发一轮新的生成，
     /// 在主程序当中写一个 script。」

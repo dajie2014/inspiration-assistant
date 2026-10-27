@@ -10,6 +10,8 @@ import Combine
 final class AppViewModel: ObservableObject {
 
     @Published var items: [GenerationItem] = []
+    /// LoRA 正在转格式（转的时候按钮上不写字，免得以为没反应）。
+    @Published var loraBusy = false
     @Published var selectedID: UUID?
     @Published var form = GenerationRequest()
     @Published var mode: GenerationMode = .generate
@@ -68,7 +70,7 @@ final class AppViewModel: ObservableObject {
     @Published var ss2Summary: String = ""
     /// 交给谱面面板的那份 ABC（带版权头；和弦原样保留）。
     @Published var ss2RepairedABC: String = ""
-    /// 「送到 MI Studio」那一行状态。空串就不显示。
+    /// 「送到 MIR Studio」那一行状态。空串就不显示。
     @Published var studioMessage: String = ""
     /// 送进 YuE2 的那份（已剥和弦）。只用于展示，不直接生效。
     @Published var ss2MelodyABC: String = ""
@@ -207,7 +209,7 @@ final class AppViewModel: ObservableObject {
     func takeBridgeStyle() {
         if let text = BridgeInbox.takeNew(.style) { form.prompt = text }
         if let text = BridgeInbox.takeNew(.lyrics) { form.lyrics = text }
-        // MI Studio 改完谱、点了「重新出歌」——在这儿开一轮新的生成。
+        // MIR Studio 改完谱、点了「重新出歌」——在这儿开一轮新的生成。
         if let request = BridgeInbox.takeRegenerate() {
             applyStudioRegenerate(request)
         }
@@ -223,7 +225,7 @@ final class AppViewModel: ObservableObject {
     func applyStudioRegenerate(_ request: BridgeInbox.Regenerate) {
         guard let abc = request.abc, !abc.isEmpty else { return }
         guard !isRunning else {
-            studioMessage = "MI Studio 送来一份改好的谱，但这边正在生成 —— 等这一轮完了再点一次「重新出歌」。"
+            studioMessage = "MIR Studio 送来一份改好的谱，但这边正在生成 —— 等这一轮完了再点一次「重新出歌」。"
             return
         }
 
@@ -237,7 +239,7 @@ final class AppViewModel: ObservableObject {
         do {
             try abc.write(to: file, atomically: true, encoding: .utf8)
         } catch {
-            studioMessage = "MI Studio 的谱收下了，但存不下来：\(error.localizedDescription)"
+            studioMessage = "MIR Studio 的谱收下了，但存不下来：\(error.localizedDescription)"
             return
         }
 
@@ -256,14 +258,14 @@ final class AppViewModel: ObservableObject {
         let dry = ProcessInfo.processInfo.environment["CS_STUDIO_DRY"] == "1"
             || UserDefaults.standard.bool(forKey: "CSStudioDry")
         if dry {
-            print("[CS] MI Studio 重唱请求（dry）—— 谱=\(file.lastPathComponent)"
+            print("[CS] MIR Studio 重唱请求（dry）—— 谱=\(file.lastPathComponent)"
                 + " 风格=\(form.prompt.prefix(24)) 词=\(form.lyrics.prefix(24))"
                 + " 档=\(yue2Tier)")
-            studioMessage = "（自检）MI Studio 送来一份谱：\(file.lastPathComponent)"
+            studioMessage = "（自检）MIR Studio 送来一份谱：\(file.lastPathComponent)"
             return
         }
 
-        studioMessage = "MI Studio 送来一份改好的谱 —— 开始重唱。"
+        studioMessage = "MIR Studio 送来一份改好的谱 —— 开始重唱。"
         generate()
     }
 
@@ -492,13 +494,27 @@ final class AppViewModel: ObservableObject {
                         finalABC = polished.repairedABC
                     }
                     try finalABC.write(to: abcURL, atomically: true, encoding: .utf8)
-                    ss2RepairedABC = finalABC
                     ss2MelodyABC = ""
-                    ss2Summary = "音频拆成谱了。先看谱面，改完再送唱。"
                     notes.append("草稿谱（草稿.abc）")
 
+                    // ★ 2026-10-26：整理成 YuE2 认的双行谱（Vocal + Ins）。
+                    //   听来的谱常差一个八度；到工作室里点「人声降八度」一键改。
+                    let twoURL = folder.appendingPathComponent("双行谱.abc")
+                    var shownURL = abcURL
+                    if AudioCppClient.buildTwoVoices(from: abcURL, to: twoURL),
+                       let two = try? String(contentsOf: twoURL, encoding: .utf8),
+                       !two.isEmpty {
+                        shownURL = twoURL
+                        ss2RepairedABC = two
+                        ss2Summary = "音频拆成双行谱了：旋律 + 低音骨架。八度不对，到工作室里调。"
+                        notes.append("双行谱（双行谱.abc）")
+                    } else {
+                        ss2RepairedABC = finalABC
+                        ss2Summary = "音频拆成谱了。先看谱面，改完再送唱。"
+                    }
+
                     // 顺手出一份 MusicXML —— 他要拖进 Dorico 的就是这个
-                    if let xml = try? ScoreFiles.convert(abcURL, to: .xml) {
+                    if let xml = try? ScoreFiles.convert(shownURL, to: .xml) {
                         notes.append("MusicXML（\(xml.lastPathComponent)）")
                     }
                 }
@@ -608,9 +624,57 @@ final class AppViewModel: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.data]
         guard panel.runModal() == .OK, let file = panel.url else { return }
-        form.loraPath = file.path
         form.loraScale = 1.0
-        exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+
+        // ★ 2026-10-25：社区文件（ComfyUI / kohya 那套）用 `lora_A` / `lora_B` 命名，
+        //   而本机引擎只认 `lora_down` / `lora_up` —— 差一个词，**而且它不报错**，
+        //   `load_lora` 里 try/except 一吞，表现就是"挂了但没效果"。
+        //   所以在选完这一步就把格式对好：同名 `-mlx` 版本在就直接用，不在就当场转。
+        let base = file.deletingPathExtension()
+        let converted = base.deletingLastPathComponent()
+            .appendingPathComponent(base.lastPathComponent + "-mlx.safetensors")
+        if file.lastPathComponent.hasSuffix("-mlx.safetensors")
+            || FileManager.default.fileExists(atPath: converted.path) {
+            form.loraPath = file.lastPathComponent.hasSuffix("-mlx.safetensors")
+                ? file.path : converted.path
+            exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+            return
+        }
+        convertLoRA(file, to: converted)
+    }
+
+    /// 把社区格式的 LoRA 转成本机引擎认识的写法（几秒，112 MB 的文件也很快）。
+    /// 用的是 `loras/convert_lora.py`（脚本在，逻辑都在那儿，界面只负责调用）。
+    private func convertLoRA(_ file: URL, to converted: URL) {
+        let python = client.root.appendingPathComponent("yue2-local/mlx-Yue/.venv/bin/python")
+        let script = client.root.appendingPathComponent("loras/convert_lora.py")
+        guard FileManager.default.fileExists(atPath: python.path),
+              FileManager.default.fileExists(atPath: script.path) else {
+            exportMessage = "这个 LoRA 的格式本机引擎不认，而转换工具没找到（loras/convert_lora.py）"
+            return
+        }
+        loraBusy = true
+        exportMessage = "正在把这件 LoRA 转成本机格式…"
+        let p = Process()
+        p.executableURL = python
+        p.arguments = [script.path, file.path]
+        p.terminationHandler = { [weak self] proc in
+            Task { @MainActor in
+                guard let self else { return }
+                self.loraBusy = false
+                if proc.terminationStatus == 0,
+                   FileManager.default.fileExists(atPath: converted.path) {
+                    self.form.loraPath = converted.path
+                    self.exportMessage = "已挂上「\(file.lastPathComponent)」，下一次生成会带它"
+                } else {
+                    self.exportMessage = "这份 LoRA 转不了（可能不是 YuE2 的），换个文件试试"
+                }
+            }
+        }
+        do { try p.run() } catch {
+            loraBusy = false
+            exportMessage = "转换起不来：\(error.localizedDescription)"
+        }
     }
 
     /// 面板里「保存并接上」：改过的 ABC 存进 `abc-cache/edited/`，
@@ -1150,6 +1214,8 @@ struct ContentView: View {
     /// 「输入歌词」那个按钮打开的小窗。写在视图里，不进 ViewModel ——
     /// 它纯粹是界面开合，跟生成状态无关。
     @State private var showsLyricsEditor = false
+    /// 「换嗓子」的小窗（2026-10-25）。同样只是界面开合。
+    @State private var showsVoiceSwap = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1171,6 +1237,7 @@ struct ContentView: View {
         .onChange(of: vm.form.lyrics) { _, _ in vm.scheduleBridgeWriteBack() }
         .sheet(isPresented: $vm.ss2ShowsPanel) { scoreEditPanel }
         .sheet(isPresented: $showsLyricsEditor) { lyricsEditorPanel }
+        .sheet(isPresented: $showsVoiceSwap) { VoiceSwapView() }
     }
 
     /// 自检开关（都只影响带环境变量启动的那一次，正常双击完全不受影响）：
@@ -1254,21 +1321,21 @@ struct ContentView: View {
             if let pick = vm.items.first(where: { $0.title.contains(probe) }) {
                 vm.selectedID = pick.id
                 let abc = vm.studioABC() ?? ""
-                line = "[CS] MI Studio 取谱 —— 「\(pick.title)」 \(abc.count) 字节"
+                line = "[CS] MIR Studio 取谱 —— 「\(pick.title)」 \(abc.count) 字节"
                     + "（引擎 \(pick.request.engine)）\n"
             } else {
-                line = "[CS] MI Studio 取谱 —— 列表里没有含「\(probe)」的条目\n"
+                line = "[CS] MIR Studio 取谱 —— 列表里没有含「\(probe)」的条目\n"
             }
             // 用 stderr 写：`print` 在重定向时有缓冲，进程被 kill 就丢了。
             FileHandle.standardError.write(Data(line.utf8))
         }
         if env["CS_STUDIO_DIR_PROBE"] == "1" {
-            let line = "[CS] MI Studio 路径 —— " + ScoreStudioClient.shared.probePaths() + "\n"
+            let line = "[CS] MIR Studio 路径 —— " + ScoreStudioClient.shared.probePaths() + "\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
         // 「最近的作品」看哪个文件夹（2026-10-25）：真写一次，把写进去的内容报出来。
         if env["CS_STUDIO_ROOT_PROBE"] == "1" {
-            let line = "[CS] MI Studio 输出根 —— " + ScoreStudioClient.shared.probeWriteRoot() + "\n"
+            let line = "[CS] MIR Studio 输出根 —— " + ScoreStudioClient.shared.probeWriteRoot() + "\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
 
@@ -1884,7 +1951,7 @@ struct ContentView: View {
             entryButton(vm.form.loraPath.isEmpty
                         ? "挂 LoRA"
                         : "LoRA：\(URL(fileURLWithPath: vm.form.loraPath).lastPathComponent)",
-                        icon: "wand.and.stars", busy: false) {
+                        icon: "wand.and.stars", busy: vm.loraBusy) {
                 vm.pickLoRA()
             }
             if !vm.form.loraPath.isEmpty {
@@ -1893,12 +1960,17 @@ struct ContentView: View {
                     vm.form.loraScale = 1.0
                 }
             }
+            // 「换嗓子」（2026-10-25）：先出一首歌，再用一段录音把嗓子换掉。
+            // 跟「生成」是前后两段 —— 所以它开一个小窗，不占生成那条路的位置。
+            entryButton("换嗓子", icon: "person.wave.2", busy: false) {
+                showsVoiceSwap = true
+            }
             if !vm.ss2RepairedABC.isEmpty {
                 entryButton("看乐谱", icon: "music.note.list", busy: false) {
                     vm.ss2ShowsPanel = true
                 }
             }
-            entryButton("送到 MI Studio", icon: "paintbrush.pointed", busy: false) {
+            entryButton("送到 MIR Studio", icon: "paintbrush.pointed", busy: false) {
                 vm.sendToScoreStudio()
             }
             if !vm.studioMessage.isEmpty {

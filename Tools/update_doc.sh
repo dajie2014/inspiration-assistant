@@ -19,8 +19,8 @@ LO_CLI="/Applications/DeepSeek Harness.app/Contents/Resources/app.asar.unpacked/
 CHECK="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/office-skills/scripts/check_office.py"
 
 NAME="使用手册"
-DOCX="${ROOT}/灵感助手-${NAME}.docx"
-PDF="${ROOT}/灵感助手-${NAME}.pdf"
+DOCX="${ROOT}/灵感路由-${NAME}.docx"
+PDF="${ROOT}/灵感路由-${NAME}.pdf"
 MINIMG=7                    # 6 张界面实拍 + 1 张整页封面，少一张就是出错
 
 # ⚠️ 变量一律写 `${VAR}` —— macOS 自带的是 bash 3.2，

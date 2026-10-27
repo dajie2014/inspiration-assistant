@@ -21,10 +21,11 @@ enum UserGuide {
 
     /// 装进 app 的文件名（不带 `.pdf`）。
     ///
-    /// ⚠️ 名字由 Composer Step 的 `Tools/update_doc.sh` 定，**不是这边起的**。
+    /// ⚠️ 名字由 `Tools/update_doc.sh` 定，**不是这边起的**。
     /// 真改要三处一起：那个脚本、磁盘上的文件、这里。
     /// `gui/build.sh` 每次构建都会确认它真的装进了 app。
-    static let resourceName = "灵感助手-使用手册"
+    /// 2026-10-27 随更名改成「灵感路由-使用手册」。
+    static let resourceName = "灵感路由-使用手册"
 
     /// 菜单上写什么。
     ///

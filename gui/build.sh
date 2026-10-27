@@ -1,10 +1,12 @@
 #!/bin/bash
-# 编译并打包「My Songwriter.app」
+# 编译并打包「灵感路由.app」（MIR · Music Inspiration Router）
 # 只依赖 Command Line Tools（无需完整 Xcode）：已有验证，37 秒完成。
 set -euo pipefail
 
-APP_NAME="灵感助手"
+APP_NAME="灵感路由"
 EXEC_NAME="LocalMusic"
+# ★ 内部标识**不许动**（2026-10-27 更名时确认）：设置存在
+#   ~/Library/Preferences/com.jieda.composerstep.plist，改了等于重置。
 BUNDLE_ID="com.jieda.composerstep"
 
 GUI_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -93,7 +95,7 @@ fi
 #    （难看但能用），而手册缺了的退路是「帮助菜单里点了一下没反应」——
 #    那正是 2026-10-11 使用者抱怨的那条死路（系统默认的「帮助」项指向
 #    一个不存在的帮助书）。宁可构建失败，也不出一个帮助菜单是假的的包。
-GUIDE="$ROOT/灵感助手-使用手册.pdf"
+GUIDE="$ROOT/灵感路由-使用手册.pdf"
 if [ -f "$GUIDE" ]; then
   cp "$GUIDE" "$OUT_APP/Contents/Resources/"
   echo "  使用手册已装入（$(basename "$GUIDE")）"

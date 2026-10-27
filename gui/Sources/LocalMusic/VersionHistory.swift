@@ -167,7 +167,7 @@ final class VersionHistoryWindow {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
-        created.title = "灵感助手 · 版本历史"
+        created.title = "灵感路由 · 版本历史"
         created.contentView = NSHostingView(rootView: VersionHistoryView(blocks: blocks))
         created.minSize = NSSize(width: 460, height: 380)
         // 关掉不销毁 —— 否则再点一次菜单会开到一个已经被释放的窗口上。

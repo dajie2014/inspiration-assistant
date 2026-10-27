@@ -14,7 +14,7 @@
 """
 import argparse
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 CN_BOLD = "/System/Library/Fonts/Hiragino Sans GB.ttc"   # index 2 = W6
 CN_REG = "/System/Library/Fonts/Hiragino Sans GB.ttc"    # index 0 = W3
@@ -39,6 +39,8 @@ def main():
     ap.add_argument("welcome")
     ap.add_argument("out")
     ap.add_argument("--version", default="")
+    ap.add_argument("--no-foot", action="store_true",
+                    help="封面底部不印日期与版本号（用户 2026-10-27 要的：只留书名）")
     args = ap.parse_args()
 
     shot = Image.open(args.welcome).convert("RGB")
@@ -52,23 +54,29 @@ def main():
     canvas = Image.new("RGB", (W, H), bg)
 
     # 上半页：欢迎图按页宽等比缩。
+    # ⚠️ 本机主屏是 1x（3440×1440），欢迎窗只有 1000×672，铺到 1701 宽就是**放大**，
+    #    字会发软 ⇒ 放大后补一道锐化（2026-10-27 实测：不加的话标题边缘能看出糊）。
     img_h = round(shot.height * W / shot.width)
-    canvas.paste(shot.resize((W, img_h), Image.LANCZOS), (0, 0))
+    top = shot.resize((W, img_h), Image.LANCZOS)
+    if shot.width < W:
+        top = top.filter(ImageFilter.UnsharpMask(radius=2, percent=75, threshold=2))
+    canvas.paste(top, (0, 0))
 
     draw = ImageDraw.Draw(canvas)
     y = img_h
 
-    centered(draw, y + 140, "灵感助手", font(170, True), (255, 255, 255))
-    centered(draw, y + 375, "MI · Music Inspirationist", font(50), SOFT)
+    centered(draw, y + 140, "灵感路由", font(170, True), (255, 255, 255))
+    centered(draw, y + 375, "MIR · Music Inspiration Router", font(46), SOFT)
 
     draw.rectangle([(W / 2 - 150, y + 470), (W / 2 + 150, y + 473)], fill=GOLD)
 
     centered(draw, y + 545, "使用手册", font(120, True), (246, 246, 250))
 
-    foot = "2026 年 10 月"
-    if args.version:
-        foot += f" · v{args.version}"
-    centered(draw, H - 118, foot, font(36), DIM)
+    if not args.no_foot:
+        foot = "2026 年 10 月"
+        if args.version:
+            foot += f" · v{args.version}"
+        centered(draw, H - 118, foot, font(36), DIM)
 
     canvas.save(args.out, optimize=True)
     print(f"✓ 封面 {W}×{H} → {args.out}")

@@ -108,7 +108,7 @@ struct WelcomeView: View {
                 //    于是整个竖排布局被顶开 —— 2026-10-12 实测就撞上了：
                 //    谱号被挤到贴着窗口上沿、副标题跟底部那行字叠在了一起。
                 //    `.background` 的尺寸跟着宿主走，文字占多大它占多大。
-                Text("灵感助手")
+                Text("灵感路由")
                     .font(.system(size: 34, weight: .semibold, design: .rounded))
                     .tracking(2.5)
                     .foregroundStyle(.white)
@@ -121,12 +121,11 @@ struct WelcomeView: View {
 
                 Spacer().frame(height: 10)
 
-                // 英文名（用户 2026-10-18 定的）：MI = Music Inspirationist。
+                // 英文名（2026-10-27 改）：MIR = Music Inspiration Router。
                 // 放在大字和中文标语之间 —— 一眼看出"这两个名字是同一个软件"。
-                // 用户 2026-10-18：「欢迎也针对 MI 做一下设计」。
-                // 把 MI 做成一个细描边的小徽章，全称跟在右边 —— 两个名字一眼是同一个。
+                // 旧名 MI · Music Inspirationist 同日退役。
                 HStack(spacing: 9) {
-                    Text("MI")
+                    Text("MIR")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .tracking(1.6)
                         .padding(.horizontal, 7)
@@ -134,9 +133,9 @@ struct WelcomeView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 4.5, style: .continuous)
                                 .stroke(.white.opacity(0.38), lineWidth: 0.8))
-                    Text("Music Inspirationist")
-                        .font(.system(size: 12, weight: .medium))
-                        .tracking(2.6)
+                    Text("Music Inspiration Router")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .tracking(2.0)
                 }
                 .foregroundStyle(.white.opacity(0.58))
 

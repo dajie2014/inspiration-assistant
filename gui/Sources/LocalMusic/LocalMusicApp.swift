@@ -31,7 +31,7 @@ struct LocalMusicApp: App {
     }
 
     var body: some Scene {
-        Window("灵感助手 · MI", id: "main") {
+        Window("灵感路由 · MIR", id: "main") {
             ContentView(vm: vm)
         }
         .windowResizability(.contentMinSize)
@@ -45,7 +45,7 @@ struct LocalMusicApp: App {
             // 换成《版本历史》后，同一个位置能直接读到"多了什么"。
             // 正文与版本号都来自项目根的 `CHANGELOG.md`，见 `VersionHistory.swift`。
             CommandGroup(replacing: .appInfo) {
-                Button("关于 灵感助手（MI）") { VersionHistoryWindow.shared.open() }
+                Button("关于 灵感路由（MIR）") { VersionHistoryWindow.shared.open() }
             }
 
             // ── 帮助菜单 ──
@@ -67,10 +67,10 @@ struct LocalMusicApp: App {
             // ── 工作室菜单（2026-10-25）──
             //
             // 用户要的：「在有乐谱的情况下，点进入 studio 就带出那份乐谱」。
-            // 有谱 → 走「送到 MI Studio」那条（谱、词、风格一起过去）；
+            // 有谱 → 走「送到 MIR Studio」那条（谱、词、风格一起过去）；
             // 没谱 → 只把页面打开，让他自己在里面导入 XML。
             CommandMenu("工作室") {
-                Button("进入 MI Studio…") { vm.enterScoreStudio() }
+                Button("进入 MIR Studio…") { vm.enterScoreStudio() }
                     .keyboardShortcut("y", modifiers: [.command, .shift])
             }
         }
