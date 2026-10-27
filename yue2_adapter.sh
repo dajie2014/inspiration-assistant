@@ -517,6 +517,13 @@ if [ -n "$LORA_PATH" ]; then
   fi
   LORA_SCALE="$(/usr/bin/python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));v=d.get("lora_scale");print(v if v is not None else 1.0)' "$PARAMS" 2>/dev/null || echo 1.0)"
   LORA_ARGS=(--lora "$LORA_PATH" --lora-scale "$LORA_SCALE")
+  # ★ 挂了 LoRA 就把内存预算抬到 24 GiB（2026-10-25 实测）：
+  #   引擎自带 16 GiB 的硬上限，而一个正常大小的社区 LoRA（100 MB 上下、
+  #   一百多个权重矩阵）折进模型后峰值到 16.17 GiB —— 正好撞线，
+  #   报的是 MemoryError，界面上看起来只是"生成失败"。
+  #   抬到 24 GiB 能跑到 47 秒出歌；**没挂 LoRA 的路径一个字不动**，
+  #   预算照旧 16，免得动到已经稳的那条路。
+  LORA_ARGS+=(--memory-budget-gib 24)
 fi
 
 # `$ACTION` 是 plan（只要谱子）或 generate（出整首歌）—— 两条子命令

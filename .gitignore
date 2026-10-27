@@ -70,7 +70,9 @@ ROADMAP.md
 docs/
 *.docx
 *.pdf
-!灵感助手-使用手册.pdf
+!灵感路由-使用手册.pdf
 *.png
 *.jpg
 *.jpeg
+# LoRA 权重放在外盘，这里只是个符号链接 —— 不进仓库
+loras
